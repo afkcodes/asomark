@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+
+/* ─── ASOMARK Design System ─── */
+/* A premium, modern palette — not generic AI slop */
+
+@theme {
+  /* ── Neutral Scale ── */
+  /* Deep blue-gray base — richer than pure gray */
+  --color-surface-0: #0a0c10;
+  --color-surface-1: #0f1218;
+  --color-surface-2: #161a22;
+  --color-surface-3: #1e232d;
+  --color-surface-4: #272d3a;
+  --color-surface-5: #333b4a;
+
+  /* ── Text ── */
+  --color-text-primary: #f0f2f5;
+  --color-text-secondary: #9ca3b4;
+  --color-text-tertiary: #636c80;
+  --color-text-muted: #4a5168;
+
+  /* ── Brand Accent — Electric Indigo ── */
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-muted: #6366f120;
+  --color-accent-soft: #6366f10d;
+
+  /* ── Semantic: Success, Warning, Danger ── */
+  --color-emerald: #34d399;
+  --color-emerald-muted: #34d39920;
+  --color-amber: #fbbf24;
+  --color-amber-muted: #fbbf2420;
+  --color-rose: #fb7185;
+  --color-rose-muted: #fb718520;
+
+  /* ── Difficulty Gradient ── */
+  --color-diff-easy: #34d399;
+  --color-diff-medium: #fbbf24;
+  --color-diff-hard: #f87171;
+  --color-diff-extreme: #ef4444;
+
+  /* ── Borders ── */
+  --color-border: #1e232d;
+  --color-border-hover: #333b4a;
+  --color-border-active: #6366f140;
+
+  /* ── Shadows ── */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* ── Radius ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* ── Font ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+}
+
+/* ─── Base ─── */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--color-surface-0);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+/* ─── Scrollbar ─── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-4);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-5);
+}
+
+/* ─── Selection ─── */
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* ─── Focus Ring ─── */
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Utility Classes ─── */
+
+.glass {
+  background: linear-gradient(135deg, rgba(22, 26, 34, 0.8), rgba(30, 35, 45, 0.6));
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-accent), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Animation ─── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Stagger children */
+.stagger-children > * {
+  animation: slide-up 0.3s ease-out both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 200ms; }
