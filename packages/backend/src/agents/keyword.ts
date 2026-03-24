@@ -3,10 +3,11 @@ import { apps } from '../db/schema/apps.js';
 import { keywords } from '../db/schema/keywords.js';
 import { keywordOpportunities } from '../db/schema/opportunities.js';
 import { keywordSnapshots, keywordRelatedQueries } from '../db/schema/keyword-intelligence.js';
+import { projects, projectCompetitors } from '../db/schema/projects.js';
 import { eq, and } from 'drizzle-orm';
 import { PlayStoreSearchScraper } from '../scrapers/playstore/index.js';
-import { GoogleSuggestScraper } from '../scrapers/google-suggest.js';
 import { KeywordScorer, type KeywordScore } from '../lib/keyword-scorer.js';
+import { KeywordDiscoverer, type DiscoveredKeyword } from '../lib/discovery.js';
 import { contentAnalyzer } from '../lib/analyzer.js';
 import { BaseAgent, type AgentContext, type AgentAction, type AgentResult } from './base.js';
 import type { DifficultySignals } from '../lib/keyword-difficulty.js';
@@ -27,6 +28,7 @@ export interface ScoredKeyword {
   difficultyMode?: 'fast' | 'full';
   finalScore: number;          // weighted composite 0-100
   currentRank: number | null;
+  bestCompRank: number | null;
   suggestedPlacement: 'title' | 'short_description' | 'description' | 'backend';
 }
 
@@ -42,10 +44,11 @@ export interface KeywordReport {
     playStoreSearch: boolean;
     suggestApis: boolean;
     competitorTitles: boolean;
+    competitorDiscovery: boolean;
   };
 }
 
-// Scoring weights from PLAN.md
+// Scoring weights
 const WEIGHTS = {
   searchVolume: 0.30,
   relevance: 0.25,
@@ -58,10 +61,10 @@ const WEIGHTS = {
 
 export class KeywordAgent extends BaseAgent {
   readonly name = 'keyword';
-  readonly description = 'Mines, scores, and prioritizes keywords for ASO using data-driven signals';
+  readonly description = 'Mines, scores, and prioritizes keywords for ASO using competitor-driven discovery and data-driven signals';
 
   private playSearch = new PlayStoreSearchScraper();
-  private googleSuggest = new GoogleSuggestScraper();
+  private discoverer = new KeywordDiscoverer();
   private scorer = new KeywordScorer();
 
   protected getSystemPrompt(_ctx: AgentContext): string {
@@ -69,7 +72,7 @@ export class KeywordAgent extends BaseAgent {
 
 ## YOUR ROLE
 
-You receive keywords that have already been mined from multiple sources (Play Store autocomplete, Google Suggest, competitor titles, Google Trends). Your job is NOT to guess search volume or difficulty — those are computed from real data signals. Your SOLE LLM responsibility is:
+You receive keywords that have already been mined from multiple sources (competitor listing reverse-engineering, Play Store autocomplete, rank verification, Google Trends). Your job is NOT to guess search volume or difficulty — those are computed from real data signals. Your SOLE LLM responsibility is:
 
 1. **Relevance scoring** (0-100): How well does this keyword match the app's actual purpose, target audience, and use case?
 2. **Placement recommendation**: Where should this keyword be placed for maximum indexing impact?
@@ -146,7 +149,8 @@ Always respond with valid JSON. No markdown fences.`;
   }
 
   /**
-   * Mine keywords from multiple sources, score with real data, and use LLM only for relevance.
+   * Mine keywords using competitor-driven discovery (rank-verified),
+   * score with real data signals, and use LLM only for relevance.
    */
   async research(appId: string, ctx: AgentContext = {}): Promise<AgentResult<KeywordReport>> {
     this.resetTokens();
@@ -160,70 +164,133 @@ Always respond with valid JSON. No markdown fences.`;
     const platform = targetApp.platform as 'android' | 'ios';
     const region = ctx.region ?? 'us';
     const lang = 'en';
+    const myPackage = targetApp.packageName ?? '';
 
-    // 2. Mine keywords from multiple sources
-    const rawKeywords = new Set<string>();
+    // 2. Find competitors for this app (from project context)
+    const competitorPackages = await this.getCompetitorPackages(appId);
 
-    // Source 1: Alphabet soup on app name
-    const nameParts = targetApp.name.split(/\s+/).filter((w) => w.length > 2);
-    for (const part of nameParts.slice(0, 3)) {
-      const suggestions = await this.playSearch.alphabetSoup(part.toLowerCase());
-      for (const s of suggestions) rawKeywords.add(s.toLowerCase());
+    // 3. PRIMARY SOURCE: Competitor-driven, rank-verified keyword discovery
+    //    This is what aso-agent does — reverse-engineer keywords from each
+    //    competitor's listing, verify they actually rank, keep only verified ones.
+    const discoveredMap = new Map<string, DiscoveredKeyword>();
+    let commonTitleKeywords: { word: string; count: number }[] = [];
+
+    if (competitorPackages.length > 0 && myPackage) {
+      // Full competitor-driven discovery (our app + all competitors)
+      const discovery = await this.discoverer.discoverFromCompetitors(
+        competitorPackages,
+        myPackage,
+        { lang, country: region, maxKeywordsPerApp: 40 },
+      );
+      for (const kw of discovery.keywords) {
+        discoveredMap.set(kw.keyword, kw);
+      }
+      commonTitleKeywords = discovery.commonTitleKeywords;
+    } else if (myPackage) {
+      // No competitors — discover from our own app
+      const results = await this.discoverer.discover(myPackage, { lang, country: region });
+      for (const r of results) {
+        discoveredMap.set(r.keyword, {
+          keyword: r.keyword,
+          rank: r.rank,
+          bestCompRank: null,
+          bestCompPackage: null,
+          totalResults: r.totalResults,
+          difficulty: null,
+          source: 'title',
+        });
+      }
     }
 
-    // Source 2: Google suggest
-    for (const part of nameParts.slice(0, 3)) {
-      const suggestions = await this.googleSuggest.suggest(`${part.toLowerCase()} app`);
-      for (const s of suggestions) rawKeywords.add(s.toLowerCase());
-
-      const suggestions2 = await this.googleSuggest.suggest(`best ${part.toLowerCase()}`);
-      for (const s of suggestions2) rawKeywords.add(s.toLowerCase());
+    // 4. SUPPLEMENTAL: Play Store suggest on app name (catches what discovery might miss)
+    if (myPackage) {
+      try {
+        const storeSuggestions = await this.playSearch.suggest(targetApp.name);
+        for (const s of storeSuggestions) {
+          const sLower = s.toLowerCase().trim();
+          if (sLower.length >= 3 && sLower.length <= 50 && !discoveredMap.has(sLower)) {
+            discoveredMap.set(sLower, {
+              keyword: sLower,
+              rank: null,
+              bestCompRank: null,
+              bestCompPackage: null,
+              totalResults: 0,
+              difficulty: null,
+              source: 'suggest',
+            });
+          }
+        }
+      } catch {
+        // Continue
+      }
     }
 
-    // Source 3: Category-based mining
+    // 5. SUPPLEMENTAL: Category-based suggest (catches category keywords)
     if (targetApp.category) {
-      const catSuggestions = await this.playSearch.suggest(targetApp.category);
-      for (const s of catSuggestions) rawKeywords.add(s.toLowerCase());
+      try {
+        const catSuggestions = await this.playSearch.suggest(targetApp.category);
+        for (const s of catSuggestions) {
+          const sLower = s.toLowerCase().trim();
+          if (sLower.length >= 3 && sLower.length <= 50 && !discoveredMap.has(sLower)) {
+            discoveredMap.set(sLower, {
+              keyword: sLower,
+              rank: null,
+              bestCompRank: null,
+              bestCompPackage: null,
+              totalResults: 0,
+              difficulty: null,
+              source: 'suggest',
+            });
+          }
+        }
+      } catch {
+        // Continue
+      }
     }
 
-    // Source 4: Play Store suggest
-    const storeSuggestions = await this.playSearch.suggest(targetApp.name);
-    for (const s of storeSuggestions) rawKeywords.add(s.toLowerCase());
+    // 6. Build candidate list — prioritize rank-verified keywords
+    const allCandidates = Array.from(discoveredMap.values());
+    // Rank-verified first (from discovery), then supplemental
+    const verified = allCandidates.filter((k) => k.rank !== null || k.bestCompRank !== null);
+    const unverified = allCandidates.filter((k) => k.rank === null && k.bestCompRank === null);
+    const candidateKeywords = [
+      ...verified.map((k) => k.keyword),
+      ...unverified.map((k) => k.keyword),
+    ].slice(0, 60);
 
-    // Source 5: Competitor title keywords (if we have competitor data in DB)
+    // 7. Get our ranks for keywords we don't have rank data for
+    const needsRankCheck = candidateKeywords.filter((k) => {
+      const d = discoveredMap.get(k);
+      return d && d.rank === null;
+    });
+    const rankMap = new Map<string, number | null>();
+    // Pre-populate from discovery data
+    for (const kw of candidateKeywords) {
+      const d = discoveredMap.get(kw);
+      if (d && d.rank !== null) rankMap.set(kw, d.rank);
+    }
+    // Check remaining
+    if (needsRankCheck.length > 0 && myPackage) {
+      const checked = await this.playSearch.getRanks(
+        needsRankCheck.slice(0, 30),
+        myPackage,
+        { lang, country: region },
+      );
+      for (const [kw, rank] of checked) {
+        rankMap.set(kw, rank);
+      }
+    }
+
+    // 8. Score keywords with real data (in chunks to respect rate limits)
+    const dataScores = new Map<string, KeywordScore>();
+    const CHUNK_SIZE = 5;
+    const keywordsToScore = candidateKeywords.slice(0, 50);
+
+    // Get competitor apps for gap analysis
     const competitorApps = await db
       .select()
       .from(apps)
       .where(and(eq(apps.isOurs, false), eq(apps.platform, platform)));
-
-    const competitorTitles = competitorApps
-      .map((a) => a.name)
-      .filter((n) => n.length > 0);
-
-    let commonTitleKeywords: { word: string; count: number }[] = [];
-    if (competitorTitles.length > 0) {
-      commonTitleKeywords = contentAnalyzer.extractCommonKeywords(competitorTitles);
-      for (const { word } of commonTitleKeywords) {
-        rawKeywords.add(word.toLowerCase());
-      }
-    }
-
-    // 3. Filter & deduplicate
-    const candidateKeywords = Array.from(rawKeywords)
-      .filter((k) => k.length >= 3 && k.length <= 80)
-      .slice(0, 60);
-
-    // 4. Get ranks and search results for data-driven scoring
-    const rankMap = await this.playSearch.getRanks(
-      candidateKeywords.slice(0, 40),
-      targetApp.packageName ?? '',
-      { lang, country: region },
-    );
-
-    // 5. Score keywords with real data (in chunks to respect rate limits)
-    const dataScores = new Map<string, KeywordScore>();
-    const CHUNK_SIZE = 5;
-    const keywordsToScore = candidateKeywords.slice(0, 40);
 
     for (let i = 0; i < keywordsToScore.length; i += CHUNK_SIZE) {
       const chunk = keywordsToScore.slice(i, i + CHUNK_SIZE);
@@ -233,14 +300,19 @@ Always respond with valid JSON. No markdown fences.`;
           const suggestResults = await this.playSearch.suggest(kw);
           const suggestPosition = suggestResults.indexOf(kw) + 1 || null;
 
-          // Get competitor ranks for this keyword
+          // Get competitor ranks from discovery data or search results
           const compRanks: (number | null)[] = [];
-          for (const result of searchResults.slice(0, 10)) {
-            if (result.appId && result.appId !== targetApp.packageName) {
+          const discovered = discoveredMap.get(kw);
+          if (discovered?.bestCompRank !== null && discovered?.bestCompRank !== undefined) {
+            compRanks.push(discovered.bestCompRank);
+          }
+          // Also check search results for known competitors
+          for (const result of searchResults.slice(0, 15)) {
+            if (result.appId && result.appId !== myPackage) {
               const isComp = competitorApps.some((a) => a.packageName === result.appId);
               if (isComp) {
                 const idx = searchResults.findIndex((r) => r.appId === result.appId);
-                compRanks.push(idx >= 0 ? idx + 1 : null);
+                if (idx >= 0) compRanks.push(idx + 1);
               }
             }
           }
@@ -264,8 +336,21 @@ Always respond with valid JSON. No markdown fences.`;
       }
     }
 
-    // 6. Use LLM ONLY for relevance scoring + placement suggestions + recommendations
+    // 9. Use LLM ONLY for relevance scoring + placement suggestions + recommendations
     const keywordsForLlm = candidateKeywords.filter((k) => dataScores.has(k));
+
+    // Include discovery context so the LLM knows which keywords are competitor-verified
+    const discoveryContext = keywordsForLlm.map((k) => {
+      const d = discoveredMap.get(k);
+      const myRank = rankMap.get(k);
+      return {
+        term: k,
+        myRank: myRank ?? null,
+        bestCompRank: d?.bestCompRank ?? null,
+        source: d?.source ?? 'unknown',
+      };
+    });
+
     const llmResult = await this.chatJSON<{
       keywords: Array<{
         term: string;
@@ -277,16 +362,16 @@ Always respond with valid JSON. No markdown fences.`;
       `Score the RELEVANCE of these keywords for the app "${targetApp.name}" (${platform}).
 ${targetApp.category ? `Category: ${targetApp.category}` : ''}
 
-Keywords:
-${JSON.stringify(keywordsForLlm)}
+Keywords with rank data (verified from Play Store):
+${JSON.stringify(discoveryContext, null, 2)}
 
-${commonTitleKeywords.length > 0 ? `\nCommon competitor title keywords (high priority):\n${commonTitleKeywords.map((k) => `"${k.word}" (in ${k.count} competitor titles)`).join(', ')}` : ''}
+${commonTitleKeywords.length > 0 ? `\nCommon competitor title keywords (high priority — these words appear in multiple competitor titles):\n${commonTitleKeywords.map((k) => `"${k.word}" (in ${k.count} competitor titles)`).join(', ')}` : ''}
 
 For each keyword, provide ONLY:
 - relevance: 0-100 (how well does this keyword match the app's purpose and target audience?)
 - suggestedPlacement: "title", "short_description", "description", or "backend"
 
-Also provide 5 strategic recommendations.
+Also provide 5 strategic recommendations based on the competitor gap data.
 
 Respond with JSON:
 {
@@ -297,7 +382,7 @@ Respond with JSON:
       { maxTokens: 4096 },
     );
 
-    // 7. Combine data-driven scores with LLM relevance
+    // 10. Combine data-driven scores with LLM relevance
     const relevanceMap = new Map(llmResult.keywords.map((k) => [k.term, k]));
 
     const scoredKeywords: ScoredKeyword[] = [];
@@ -305,6 +390,7 @@ Respond with JSON:
       const llmData = relevanceMap.get(term);
       const relevance = llmData?.relevance ?? 50;
       const suggestedPlacement = llmData?.suggestedPlacement ?? 'description';
+      const discovered = discoveredMap.get(term);
 
       const finalScore =
         dataScore.searchVolumeProxy * WEIGHTS.searchVolume +
@@ -327,6 +413,7 @@ Respond with JSON:
         difficultyMode: dataScore.difficultyMode,
         finalScore: Math.round(finalScore * 10) / 10,
         currentRank: rankMap.get(term) ?? null,
+        bestCompRank: discovered?.bestCompRank ?? null,
         suggestedPlacement,
       });
     }
@@ -334,13 +421,13 @@ Respond with JSON:
     // Sort by final score
     scoredKeywords.sort((a, b) => b.finalScore - a.finalScore);
 
-    // 8. Separate top keywords vs long-tail opportunities
+    // 11. Separate top keywords vs long-tail opportunities
     const topKeywords = scoredKeywords.filter((k) => k.finalScore >= 50);
     const longTailOpportunities = scoredKeywords.filter(
       (k) => k.finalScore < 50 && k.competitorGap >= 60,
     );
 
-    // 9. Save keywords to DB
+    // 12. Save keywords to DB
     for (const kw of scoredKeywords) {
       const existing = await db
         .select()
@@ -438,15 +525,27 @@ Respond with JSON:
       }
     }
 
-    // 10. Log actions
+    // 13. Log actions
+    const verifiedCount = verified.length;
     actions.push({
       actionType: 'keyword_mining',
-      reasoning: `Mined ${rawKeywords.size} raw keywords. Scored ${scoredKeywords.length} with data-driven signals (Google Trends, search results, competitor analysis). LLM used only for relevance.`,
+      reasoning: `Discovered ${discoveredMap.size} keywords (${verifiedCount} rank-verified from ${competitorPackages.length} competitors + our app). Scored ${scoredKeywords.length} with data-driven signals. LLM used only for relevance.`,
       suggestedChange: `Found ${topKeywords.length} high-value keywords, ${longTailOpportunities.length} long-tail opportunities`,
       authorityLevel: 'L1',
     });
 
     if (topKeywords.length > 0) {
+      // Keywords where competitors rank but we don't — biggest opportunities
+      const gapKeywords = topKeywords.filter((k) => k.bestCompRank !== null && k.currentRank === null);
+      if (gapKeywords.length > 0) {
+        actions.push({
+          actionType: 'competitor_gap',
+          reasoning: `Found ${gapKeywords.length} keywords where competitors rank but you don't: ${gapKeywords.slice(0, 5).map((k) => `"${k.term}" (comp #${k.bestCompRank})`).join(', ')}`,
+          suggestedChange: `Target these gap keywords: ${gapKeywords.slice(0, 3).map((k) => k.term).join(', ')}`,
+          authorityLevel: 'L2',
+        });
+      }
+
       const titleKws = topKeywords.filter((k) => k.suggestedPlacement === 'title');
       if (titleKws.length > 0) {
         actions.push({
@@ -472,9 +571,34 @@ Respond with JSON:
         playStoreSearch: true,
         suggestApis: true,
         competitorTitles: commonTitleKeywords.length > 0,
+        competitorDiscovery: competitorPackages.length > 0,
       },
     };
 
     return { data: report, actions, tokensUsed: this.getTokenUsage() };
+  }
+
+  /**
+   * Find competitor package names for an app by looking up its project.
+   */
+  private async getCompetitorPackages(appId: string): Promise<string[]> {
+    // Find project that contains this app
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.appId, appId));
+
+    if (!project) return [];
+
+    // Get competitor app IDs from project_competitors
+    const competitors = await db
+      .select({ packageName: apps.packageName })
+      .from(projectCompetitors)
+      .innerJoin(apps, eq(projectCompetitors.competitorAppId, apps.id))
+      .where(eq(projectCompetitors.projectId, project.id));
+
+    return competitors
+      .map((c) => c.packageName)
+      .filter((p): p is string => p !== null && p.length > 0);
   }
 }
