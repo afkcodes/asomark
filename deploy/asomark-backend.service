@@ -5,9 +5,9 @@ Wants=docker.service
 
 [Service]
 Type=simple
-User=ashish
-WorkingDirectory=/opt/asomark/packages/backend
-EnvironmentFile=/opt/asomark/.env
+User=afkcodes
+WorkingDirectory=/home/afkcodes/asomark/packages/backend
+EnvironmentFile=/home/afkcodes/asomark/.env
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
@@ -18,7 +18,7 @@ SyslogIdentifier=asomark
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/asomark
+ReadWritePaths=/home/afkcodes/asomark
 
 [Install]
 WantedBy=multi-user.target
