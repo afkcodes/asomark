@@ -1,0 +1,24 @@
+[Unit]
+Description=ASOMARK Backend (Fastify API + BullMQ Workers)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ashish
+WorkingDirectory=/opt/asomark/packages/backend
+EnvironmentFile=/opt/asomark/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=asomark
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/asomark
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3001'
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001'
 
 export class ApiError extends Error {
   constructor(
