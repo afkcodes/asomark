@@ -234,6 +234,7 @@ Always respond with valid JSON. No markdown fences.`;
   async analyze(
     projectId: string,
     ctx: AgentContext = {},
+    resolvedSeeds?: string[],
   ): Promise<AgentResult<SeoReport>> {
     this.resetTokens();
     const actions: AgentAction[] = [];
@@ -242,7 +243,7 @@ Always respond with valid JSON. No markdown fences.`;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     if (!project) throw new Error('Project not found');
 
-    const seeds = (project.seedKeywords as string[]) ?? [];
+    const seeds = resolvedSeeds ?? (project.seedKeywords as string[]) ?? [];
     if (seeds.length === 0) throw new Error('No seed keywords configured for SEO analysis');
 
     // 2. Discover raw SEO keywords (broad web mining)

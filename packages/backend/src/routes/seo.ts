@@ -236,7 +236,7 @@ export async function seoRoutes(app: FastifyInstance) {
     }
 
     const agent = new SeoAgent();
-    const result = await agent.analyze(id);
+    const result = await agent.analyze(id, {}, seeds);
     return result.data;
   });
 
