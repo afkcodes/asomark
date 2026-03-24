@@ -1,8 +1,10 @@
 import { db } from '../db/index.js';
 import { apps } from '../db/schema/apps.js';
 import { keywords } from '../db/schema/keywords.js';
+import { keywordOpportunities } from '../db/schema/opportunities.js';
 import { rankSnapshots } from '../db/schema/rankings.js';
 import { listingSnapshots } from '../db/schema/listings.js';
+import { projects, discoveredKeywords } from '../db/schema/projects.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { PlayStoreSearchScraper } from '../scrapers/playstore/index.js';
 import { PlayStoreDetailsScraper } from '../scrapers/playstore/index.js';
@@ -139,11 +141,54 @@ Always respond with valid JSON. No markdown fences.`;
     if (!targetApp) throw new Error(`App ${appId} not found`);
     if (!targetApp.packageName) throw new Error(`App ${appId} has no packageName`);
 
-    // 2. Get all tracked keywords
-    const trackedKeywords = await db
+    // 2. Get keywords to track — use project's discovered keywords (rank-verified, relevant)
+    //    Falls back to global keywords table only if no project context exists
+    const [project] = await db
       .select()
-      .from(keywords)
-      .where(eq(keywords.platform, targetApp.platform));
+      .from(projects)
+      .where(eq(projects.appId, appId));
+
+    let trackedKeywords: { id: string; term: string }[] = [];
+
+    if (project) {
+      // Only track keywords the user has explicitly marked for tracking
+      const discovered = await db
+        .select({
+          keyword: discoveredKeywords.keyword,
+        })
+        .from(discoveredKeywords)
+        .where(and(
+          eq(discoveredKeywords.projectId, project.id),
+          eq(discoveredKeywords.isTracking, true),
+        ));
+
+      // Match tracked keywords to the global keywords table to get IDs
+      for (const dk of discovered) {
+        const [kw] = await db
+          .select({ id: keywords.id, term: keywords.term })
+          .from(keywords)
+          .where(and(eq(keywords.term, dk.keyword), eq(keywords.platform, targetApp.platform)));
+
+        if (kw) {
+          trackedKeywords.push(kw);
+        } else {
+          // Create entry in global keywords table if it doesn't exist yet
+          const [inserted] = await db
+            .insert(keywords)
+            .values({ term: dk.keyword, platform: targetApp.platform, lastUpdated: new Date() })
+            .onConflictDoNothing()
+            .returning();
+          if (inserted) trackedKeywords.push({ id: inserted.id, term: inserted.term });
+        }
+      }
+    } else {
+      // Fallback: use keywords from keyword_opportunities for this app
+      trackedKeywords = await db
+        .select({ id: keywords.id, term: keywords.term })
+        .from(keywords)
+        .innerJoin(keywordOpportunities, eq(keywords.id, keywordOpportunities.keywordId))
+        .where(eq(keywordOpportunities.appId, appId));
+    }
 
     if (trackedKeywords.length === 0) {
       return {
@@ -154,7 +199,7 @@ Always respond with valid JSON. No markdown fences.`;
           rankChanges: [],
           significantMoves: [],
           competitorChanges: [],
-          alerts: ['No keywords tracked yet. Run keyword agent first.'],
+          alerts: ['No keywords marked for tracking. Enable tracking on discovered keywords first.'],
         },
         actions: [],
         tokensUsed: this.getTokenUsage(),
