@@ -1,0 +1,27 @@
+{
+  "name": "asomark",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous ASO/SEO Intelligence Platform",
+  "packageManager": "yarn@4.12.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "yarn workspaces foreach -Api run dev",
+    "dev:backend": "yarn workspace @asomark/backend dev",
+    "dev:dashboard": "yarn workspace @asomark/dashboard dev",
+    "build": "yarn workspaces foreach -Ati run build",
+    "build:backend": "yarn workspace @asomark/backend build",
+    "build:dashboard": "yarn workspace @asomark/dashboard build",
+    "lint": "yarn workspaces foreach -Api run lint",
+    "typecheck": "yarn workspaces foreach -Api run typecheck",
+    "db:generate": "yarn workspace @asomark/backend db:generate",
+    "db:migrate": "yarn workspace @asomark/backend db:migrate",
+    "db:studio": "yarn workspace @asomark/backend db:studio",
+    "clean": "yarn workspaces foreach -Api run clean"
+  }
+}
