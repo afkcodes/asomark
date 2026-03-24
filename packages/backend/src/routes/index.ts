@@ -14,6 +14,7 @@ import { agentRoutes } from './agents.js';
 import { projectRoutes } from './projects.js';
 import { streamRoutes } from './stream.js';
 import { seoRoutes } from './seo.js';
+import { settingsRoutes } from './settings.js';
 
 export async function routes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -36,4 +37,5 @@ export async function routes(app: FastifyInstance) {
   await app.register(projectRoutes);
   await app.register(streamRoutes);
   await app.register(seoRoutes);
+  await app.register(settingsRoutes);
 }

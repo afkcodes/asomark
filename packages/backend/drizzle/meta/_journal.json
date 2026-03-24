@@ -57,6 +57,13 @@
       "when": 1774334480641,
       "tag": "0007_smooth_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774381048114,
+      "tag": "0008_flashy_proudstar",
+      "breakpoints": true
     }
   ]
 }

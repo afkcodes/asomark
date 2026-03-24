@@ -542,3 +542,17 @@ export const agents = {
     return list<StrategyAction>(`/api/agents/pending${qs}`)
   },
 }
+
+// ─── Settings ───
+
+export interface SettingsResponse {
+  anthropic_api_key: string | null
+  openai_api_key: string | null
+  openrouter_api_key: string | null
+}
+
+export const settingsApi = {
+  get: () => api.get<SettingsResponse>('/api/settings'),
+  save: (data: Partial<Record<'anthropic_api_key' | 'openai_api_key' | 'openrouter_api_key', string>>) =>
+    api.patch<void>('/api/settings', data),
+}

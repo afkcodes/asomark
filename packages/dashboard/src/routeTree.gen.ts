@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StrategyIndexRouteImport } from './routes/strategy/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const StrategyIndexRoute = StrategyIndexRouteImport.update({
   id: '/strategy/',
   path: '/strategy/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RankingsIndexRoute = RankingsIndexRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/': typeof ProjectsIndexRoute
   '/rankings/': typeof RankingsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/strategy/': typeof StrategyIndexRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects': typeof ProjectsIndexRoute
   '/rankings': typeof RankingsIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/strategy': typeof StrategyIndexRoute
 }
 export interface FileRoutesById {
@@ -61,6 +69,7 @@ export interface FileRoutesById {
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/': typeof ProjectsIndexRoute
   '/rankings/': typeof RankingsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/strategy/': typeof StrategyIndexRoute
 }
 export interface FileRouteTypes {
@@ -70,15 +79,23 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/rankings/'
+    | '/settings/'
     | '/strategy/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/projects/$projectId' | '/projects' | '/rankings' | '/strategy'
+  to:
+    | '/'
+    | '/projects/$projectId'
+    | '/projects'
+    | '/rankings'
+    | '/settings'
+    | '/strategy'
   id:
     | '__root__'
     | '/'
     | '/projects/$projectId'
     | '/projects/'
     | '/rankings/'
+    | '/settings/'
     | '/strategy/'
   fileRoutesById: FileRoutesById
 }
@@ -87,6 +104,7 @@ export interface RootRouteChildren {
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
   StrategyIndexRoute: typeof StrategyIndexRoute
 }
 
@@ -104,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/strategy'
       fullPath: '/strategy/'
       preLoaderRoute: typeof StrategyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rankings/': {
@@ -135,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
   StrategyIndexRoute: StrategyIndexRoute,
 }
 export const routeTree = rootRouteImport

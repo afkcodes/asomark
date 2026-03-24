@@ -63,9 +63,12 @@ function TopNav() {
           <div className="text-[10px] font-medium text-text-muted tracking-widest uppercase">
             Personal
           </div>
-          <button className="w-8 h-8 rounded-full bg-surface-3 border border-border flex items-center justify-center text-text-tertiary hover:text-text-primary transition-colors cursor-pointer">
+          <Link
+            to="/settings"
+            className="w-8 h-8 rounded-full bg-surface-3 border border-border flex items-center justify-center text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+          >
             <Settings size={14} />
-          </button>
+          </Link>
         </div>
       </div>
     </header>

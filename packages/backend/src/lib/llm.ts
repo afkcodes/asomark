@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { env } from '../config/env.js';
+import { db } from '../db/index.js';
+import { settings } from '../db/schema/settings.js';
+import { inArray } from 'drizzle-orm';
 
 // ─── Types ───
 
@@ -25,41 +28,73 @@ export interface LLMOptions {
 
 export type LLMProvider = 'claude' | 'openai' | 'openrouter';
 
-// ─── Clients (lazy-initialized) ───
+// ─── DB settings cache (5-minute TTL) ───
 
-let anthropicClient: Anthropic | null = null;
-let openaiClient: OpenAI | null = null;
-let openrouterClient: OpenAI | null = null;
-
-function getAnthropic(): Anthropic {
-  if (!anthropicClient) {
-    if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set');
-    anthropicClient = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  }
-  return anthropicClient;
+interface ApiKeys {
+  anthropic?: string;
+  openai?: string;
+  openrouter?: string;
 }
 
-function getOpenAI(): OpenAI {
-  if (!openaiClient) {
-    if (!env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
-    openaiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+let cachedKeys: ApiKeys | null = null;
+let cacheExpiry = 0;
+
+async function getApiKeys(): Promise<ApiKeys> {
+  if (cachedKeys && Date.now() < cacheExpiry) return cachedKeys;
+  try {
+    const rows = await db
+      .select()
+      .from(settings)
+      .where(inArray(settings.key, ['anthropic_api_key', 'openai_api_key', 'openrouter_api_key']));
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    cachedKeys = {
+      anthropic: map['anthropic_api_key'] || env.ANTHROPIC_API_KEY,
+      openai: map['openai_api_key'] || env.OPENAI_API_KEY,
+      openrouter: map['openrouter_api_key'] || env.OPENROUTER_API_KEY,
+    };
+  } catch {
+    // DB not ready yet — fall back to env
+    cachedKeys = {
+      anthropic: env.ANTHROPIC_API_KEY,
+      openai: env.OPENAI_API_KEY,
+      openrouter: env.OPENROUTER_API_KEY,
+    };
   }
-  return openaiClient;
+  cacheExpiry = Date.now() + 5 * 60 * 1000;
+  return cachedKeys;
 }
 
-function getOpenRouter(): OpenAI {
-  if (!openrouterClient) {
-    if (!env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is not set');
-    openrouterClient = new OpenAI({
-      apiKey: env.OPENROUTER_API_KEY,
-      baseURL: 'https://openrouter.ai/api/v1',
-      defaultHeaders: {
-        'HTTP-Referer': 'https://asomark.dev',
-        'X-Title': 'ASOMARK',
-      },
-    });
-  }
-  return openrouterClient;
+/** Invalidate the API key cache (call after saving new keys) */
+export function invalidateApiKeyCache() {
+  cachedKeys = null;
+  cacheExpiry = 0;
+}
+
+// ─── Clients (created per-call when key may change) ───
+
+async function getAnthropic(): Promise<Anthropic> {
+  const keys = await getApiKeys();
+  if (!keys.anthropic) throw new Error('ANTHROPIC_API_KEY is not set');
+  return new Anthropic({ apiKey: keys.anthropic });
+}
+
+async function getOpenAI(): Promise<OpenAI> {
+  const keys = await getApiKeys();
+  if (!keys.openai) throw new Error('OPENAI_API_KEY is not set');
+  return new OpenAI({ apiKey: keys.openai });
+}
+
+async function getOpenRouter(): Promise<OpenAI> {
+  const keys = await getApiKeys();
+  if (!keys.openrouter) throw new Error('OPENROUTER_API_KEY is not set');
+  return new OpenAI({
+    apiKey: keys.openrouter,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': 'https://asomark.dev',
+      'X-Title': 'ASOMARK',
+    },
+  });
 }
 
 // ─── Provider implementations ───
@@ -68,7 +103,7 @@ async function callClaude(
   messages: LLMMessage[],
   opts: LLMOptions = {},
 ): Promise<LLMResponse> {
-  const client = getAnthropic();
+  const client = await getAnthropic();
   const model = opts.model ?? 'claude-sonnet-4-20250514';
   const response = await client.messages.create({
     model,
@@ -78,7 +113,7 @@ async function callClaude(
     messages,
   });
 
-  const textBlock = response.content.find((b) => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text') as { type: 'text'; text: string } | undefined;
   return {
     content: textBlock?.text ?? '',
     inputTokens: response.usage.input_tokens,
@@ -119,12 +154,13 @@ async function callOpenAICompat(
 
 // ─── Provider resolution ───
 
-function resolveProvider(): LLMProvider {
-  if (env.OPENROUTER_API_KEY) return 'openrouter';
-  if (env.ANTHROPIC_API_KEY) return 'claude';
-  if (env.OPENAI_API_KEY) return 'openai';
+async function resolveProvider(): Promise<LLMProvider> {
+  const keys = await getApiKeys();
+  if (keys.openrouter) return 'openrouter';
+  if (keys.anthropic) return 'claude';
+  if (keys.openai) return 'openai';
   throw new Error(
-    'No LLM API key configured. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env',
+    'No LLM API key configured. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env or in Settings.',
   );
 }
 
@@ -135,7 +171,7 @@ const DEFAULT_MODELS: Record<LLMProvider, string> = {
   openai: 'gpt-4o',
 };
 
-function callProvider(
+async function callProvider(
   provider: LLMProvider,
   messages: LLMMessage[],
   opts: LLMOptions,
@@ -144,12 +180,12 @@ function callProvider(
     case 'claude':
       return callClaude(messages, opts);
     case 'openai':
-      return callOpenAICompat(getOpenAI(), messages, {
+      return callOpenAICompat(await getOpenAI(), messages, {
         ...opts,
         defaultModel: DEFAULT_MODELS.openai,
       });
     case 'openrouter':
-      return callOpenAICompat(getOpenRouter(), messages, {
+      return callOpenAICompat(await getOpenRouter(), messages, {
         ...opts,
         defaultModel: DEFAULT_MODELS.openrouter,
       });
@@ -166,7 +202,7 @@ export async function llm(
   messages: LLMMessage[],
   opts: LLMOptions & { provider?: LLMProvider } = {},
 ): Promise<LLMResponse> {
-  const provider = opts.provider ?? resolveProvider();
+  const provider = opts.provider ?? await resolveProvider();
   return callProvider(provider, messages, opts);
 }
 
