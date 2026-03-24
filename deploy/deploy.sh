@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/opt/asomark"
+APP_DIR="/home/afkcodes/asomark"
 BRANCH="${1:-main}"
 
 echo "==> Deploying ASOMARK from branch: $BRANCH"
@@ -41,6 +41,9 @@ docker compose -f docker-compose.prod.yml up -d
 # Restart backend via systemd
 echo "==> Restarting backend..."
 sudo systemctl restart asomark-backend
+
+# Ensure Nginx can read the dist directory
+chmod o+x /home/afkcodes
 
 # Reload Nginx (in case config changed)
 echo "==> Reloading Nginx..."
