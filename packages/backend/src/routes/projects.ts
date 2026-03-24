@@ -656,8 +656,22 @@ export async function projectRoutes(app: FastifyInstance) {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return reply.status(404).send({ error: 'Project not found' });
 
-    // Use provided keywords or fall back to project seed keywords
-    const seeds = body.keywords ?? (project.seedKeywords as string[]) ?? [];
+    // Use provided keywords or fall back to project seed keywords or derive from app name
+    let seeds = body.keywords ?? (project.seedKeywords as string[]) ?? [];
+    if (seeds.length === 0) {
+      // For live projects: derive seeds from the app name
+      const [appRow] = await db.select().from(apps).where(eq(apps.id, project.appId));
+      if (appRow?.name) {
+        const afterSep = appRow.name.split(/[-–—:|]/).slice(1).join(' ').trim();
+        const nameSource = afterSep || appRow.name;
+        const words = nameSource
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter((w: string) => w.length > 3);
+        if (words.length > 0) seeds = [words.join(' '), ...words.slice(0, 2)];
+      }
+    }
     if (seeds.length === 0) {
       return reply.status(400).send({ error: 'No keywords provided and no seed keywords configured' });
     }

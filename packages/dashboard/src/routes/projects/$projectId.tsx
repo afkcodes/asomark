@@ -621,22 +621,20 @@ function CompetitorsTab({ project }: { project: ProjectDetail }) {
 
   return (
     <div>
-      {/* Auto-discover for pre-launch */}
-      {isPreLaunch && (
-        <div className="mb-5">
-          <ActionButton
-            onClick={() => discoverComps.mutate()}
-            isPending={discoverComps.isPending}
-            isSuccess={discoverComps.isSuccess}
-            isError={discoverComps.isError}
-            icon={<SearchIcon size={13} />}
-            label="Find Competitors"
-            pendingLabel="Searching Play Store..."
-            successMessage={suggestions.length > 0 ? `Found ${suggestions.length} apps` : 'No results'}
-            errorMessage="Search failed"
-          />
-        </div>
-      )}
+      {/* Auto-discover competitors */}
+      <div className="mb-5">
+        <ActionButton
+          onClick={() => discoverComps.mutate()}
+          isPending={discoverComps.isPending}
+          isSuccess={discoverComps.isSuccess}
+          isError={discoverComps.isError}
+          icon={<SearchIcon size={13} />}
+          label="Find Competitors"
+          pendingLabel="Searching Play Store..."
+          successMessage={suggestions.length > 0 ? `Found ${suggestions.length} apps` : 'No results'}
+          errorMessage="Search failed"
+        />
+      </div>
 
       {/* Suggested competitors from auto-discovery */}
       {suggestions.length > 0 && (
