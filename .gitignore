@@ -20,6 +20,7 @@ build/
 .env
 .env.local
 .env.*.local
+deploy/.env.production
 
 # IDE
 .vscode/settings.json
