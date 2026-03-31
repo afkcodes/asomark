@@ -9,6 +9,9 @@ export const projects = pgTable('projects', {
   mode: text('mode', { enum: ['live', 'pre_launch'] }).notNull().default('live'),
   seedKeywords: json('seed_keywords').$type<string[]>(),
   category: text('category'),
+  appDescription: text('app_description'),
+  keyFeatures: json('key_features').$type<string[]>(),
+  targetAudience: text('target_audience'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

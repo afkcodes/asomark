@@ -259,6 +259,9 @@ Always respond with valid JSON. No markdown fences.`;
 
     const seeds = (project.seedKeywords as string[]) ?? [];
     const category = project.category ?? projectApp.category ?? '';
+    const appDescription = (project.appDescription as string) ?? '';
+    const keyFeatures = (project.keyFeatures as string[]) ?? [];
+    const targetAudience = (project.targetAudience as string) ?? '';
 
     // Get discovered keywords (top 40 by rank/tracking priority)
     const discoveredKws = await db
@@ -406,7 +409,10 @@ Always respond with valid JSON. No markdown fences.`;
       `Analyze these keywords for the app "${project.name}".
 Category: ${category || 'Unknown'}
 Seed keywords: ${seeds.join(', ') || 'None'}
-${existingDraft?.title ? `Current draft title: "${existingDraft.title}"` : ''}
+${appDescription ? `\n## App Description:\n${appDescription}` : ''}
+${keyFeatures.length > 0 ? `\n## Key Features:\n${keyFeatures.map((f) => `- ${f}`).join('\n')}` : ''}
+${targetAudience ? `\n## Target Audience:\n${targetAudience}` : ''}
+${existingDraft?.title ? `\nCurrent draft title: "${existingDraft.title}"` : ''}
 
 ## Discovered Keywords (${keywordData.length}):
 ${JSON.stringify(keywordData, null, 2)}
@@ -414,7 +420,7 @@ ${JSON.stringify(keywordData, null, 2)}
 ${commonTitleKeywords.length > 0 ? `## Common Competitor Title Keywords:\n${commonTitleKeywords.map((k) => `"${k.word}" (in ${k.count} titles)`).join(', ')}` : ''}
 
 ## Your Tasks:
-1. In ONE sentence, describe what this app does and who it serves (the value proposition).
+1. ${appDescription ? 'Refine the value proposition based on the app description above' : 'In ONE sentence, describe what this app does and who it serves (the value proposition)'}.
 2. For EACH keyword, decide:
    - relevance (0-100): how well does it match the app's actual purpose? Be strict — a keyword about "investing" is NOT relevant for an "expense tracker".
    - intent: is the user searching to learn (informational), find a specific app (navigational), or download one (transactional)?
@@ -511,6 +517,9 @@ Respond with JSON:
 ## App: "${project.name}"
 Value proposition: ${keywordFilterResult.valueProposition}
 Category: ${category || 'Unknown'}
+${appDescription ? `\n## What the App Does:\n${appDescription}` : ''}
+${keyFeatures.length > 0 ? `\n## Key Features:\n${keyFeatures.map((f) => `- ${f}`).join('\n')}` : ''}
+${targetAudience ? `\n## Target Audience:\n${targetAudience}` : ''}
 
 ## Keywords by Priority:
 PRIMARY (must include): ${primaryKeywords.join(', ') || 'None'}

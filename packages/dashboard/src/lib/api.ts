@@ -58,6 +58,9 @@ export interface Project {
   mode: 'live' | 'pre_launch'
   seedKeywords?: string[] | null
   category?: string | null
+  appDescription?: string | null
+  keyFeatures?: string[] | null
+  targetAudience?: string | null
   isActive: boolean
   createdAt: string
   app?: App
@@ -329,11 +332,24 @@ export const projects = {
     mode?: 'live' | 'pre_launch'
     seedKeywords?: string[]
     category?: string
+    appDescription?: string
+    keyFeatures?: string[]
+    targetAudience?: string
   }) => api.post<Project>('/api/projects', data),
+  update: (id: string, data: {
+    name?: string
+    region?: string
+    seedKeywords?: string[]
+    category?: string
+    appDescription?: string
+    keyFeatures?: string[]
+    targetAudience?: string
+  }) => api.patch<Project>(`/api/projects/${id}`, data),
   delete: (id: string) => api.del(`/api/projects/${id}`),
   keywords: (id: string) => list<DiscoveredKeyword>(`/api/projects/${id}/keywords`),
   discoverAll: (id: string) =>
     api.post<{ discovered: number; saved: number }>(`/api/projects/${id}/discover-all`, {}),
+  deleteAllKeywords: (id: string) => api.del(`/api/projects/${id}/keywords`),
   checkRanks: (id: string) =>
     api.post<{ checked: number; updated: number }>(`/api/projects/${id}/check-my-ranks`, {}),
   toggleTrack: (id: string, keywordId: string) =>
@@ -519,6 +535,7 @@ export const seo = {
     api.post<SeoDiscoveryResult>(`/api/projects/${projectId}/seo/discover`, {}),
   analyze: (projectId: string) =>
     api.post<SeoReport>(`/api/projects/${projectId}/seo/analyze`, {}),
+  deleteAll: (projectId: string) => api.del(`/api/projects/${projectId}/seo/keywords`),
   toggleTrack: (projectId: string, keywordId: string) =>
     api.post<{ success: boolean; isTracking: boolean }>(
       `/api/projects/${projectId}/seo/keywords/${keywordId}/track`,

@@ -40,6 +40,10 @@ export function CreateProjectDialog() {
   const [seedKeywords, setSeedKeywords] = useState<string[]>([])
   const [seedInput, setSeedInput] = useState('')
   const [category, setCategory] = useState('')
+  const [appDescription, setAppDescription] = useState('')
+  const [keyFeatures, setKeyFeatures] = useState<string[]>([])
+  const [featureInput, setFeatureInput] = useState('')
+  const [targetAudience, setTargetAudience] = useState('')
 
   // Shared
   const [projectName, setProjectName] = useState('')
@@ -69,6 +73,9 @@ export function CreateProjectDialog() {
         mode: 'pre_launch',
         seedKeywords,
         category: category || undefined,
+        appDescription: appDescription || undefined,
+        keyFeatures: keyFeatures.length > 0 ? keyFeatures : undefined,
+        targetAudience: targetAudience || undefined,
       })
     },
     onSuccess: () => {
@@ -87,6 +94,10 @@ export function CreateProjectDialog() {
     setSeedKeywords([])
     setSeedInput('')
     setCategory('')
+    setAppDescription('')
+    setKeyFeatures([])
+    setFeatureInput('')
+    setTargetAudience('')
   }
 
   function addSeedKeyword() {
@@ -108,6 +119,24 @@ export function CreateProjectDialog() {
     }
     if (e.key === 'Backspace' && !seedInput && seedKeywords.length > 0) {
       setSeedKeywords(seedKeywords.slice(0, -1))
+    }
+  }
+
+  function addFeature() {
+    const feat = featureInput.trim()
+    if (feat && !keyFeatures.includes(feat)) {
+      setKeyFeatures([...keyFeatures, feat])
+    }
+    setFeatureInput('')
+  }
+
+  function handleFeatureKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addFeature()
+    }
+    if (e.key === 'Backspace' && !featureInput && keyFeatures.length > 0) {
+      setKeyFeatures(keyFeatures.slice(0, -1))
     }
   }
 
@@ -265,6 +294,66 @@ export function CreateProjectDialog() {
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary mb-1.5 block">
+                What does your app do?
+              </label>
+              <textarea
+                value={appDescription}
+                onChange={(e) => setAppDescription(e.target.value)}
+                placeholder="A personal finance app that helps users track daily expenses, set budgets, and see where their money goes..."
+                rows={2}
+                className="w-full bg-surface-1 border border-border rounded-[var(--radius-md)] px-3 py-2 text-sm text-text-primary placeholder:text-text-muted resize-none hover:border-border-hover focus:border-accent focus:outline-none"
+              />
+              <p className="text-[10px] text-text-muted mt-1">
+                This helps the AI write an accurate listing instead of guessing.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary mb-1.5 block">
+                Key Features
+              </label>
+              <div className="min-h-[42px] flex flex-wrap gap-1.5 p-2 bg-surface-1 border border-border rounded-[var(--radius-md)] focus-within:border-accent transition-colors">
+                {keyFeatures.map((feat) => (
+                  <span
+                    key={feat}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald/10 text-emerald text-xs rounded-md"
+                  >
+                    {feat}
+                    <button
+                      onClick={() => setKeyFeatures(keyFeatures.filter((f) => f !== feat))}
+                      className="hover:text-emerald-hover cursor-pointer"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={featureInput}
+                  onChange={(e) => setFeatureInput(e.target.value)}
+                  onKeyDown={handleFeatureKeyDown}
+                  onBlur={addFeature}
+                  placeholder={keyFeatures.length === 0 ? 'Budget tracking, Bill reminders, Charts...' : ''}
+                  className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-sm text-text-primary placeholder:text-text-muted"
+                />
+              </div>
+              <p className="text-[10px] text-text-muted mt-1.5">
+                Main features of your app. Press Enter to add.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary mb-1.5 block">
+                Target Audience
+              </label>
+              <Input
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="Young professionals who want to manage personal finances"
+              />
+              <p className="text-[10px] text-text-muted mt-1.5">
+                Who is this app for? Helps the AI tailor listing language.
+              </p>
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" className="flex-1" onClick={() => { setStep('mode'); setProjectName('') }}>

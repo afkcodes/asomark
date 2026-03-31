@@ -94,12 +94,52 @@ const TRANSACTIONAL_SIGNALS = [
 
 // ─── SEO Keyword Discoverer ───
 
-// Reddit subreddits relevant for app/software/finance topics
-const REDDIT_SUBREDDITS = [
-  'androidapps', 'Android', 'apps',
-  'personalfinance', 'ynab', 'budgeting', 'frugal',
-  'productivity', 'selfimprovement',
-];
+// Base subreddits where people discuss apps (always included)
+const BASE_REDDIT_SUBREDDITS = ['androidapps', 'Android', 'apps'];
+
+// Category → relevant subreddits mapping
+const CATEGORY_SUBREDDITS: Record<string, string[]> = {
+  'finance': ['personalfinance', 'budgeting', 'ynab', 'frugal'],
+  'productivity': ['productivity', 'getdisciplined', 'selfimprovement'],
+  'health & fitness': ['fitness', 'loseit', 'nutrition', 'running'],
+  'education': ['learnprogramming', 'college', 'studytips'],
+  'social': ['socialmedia', 'marketing'],
+  'communication': ['email', 'privacy'],
+  'photography': ['photography', 'mobilephotography'],
+  'music & audio': ['WeAreTheMusicMakers', 'audioengineering'],
+  'travel & local': ['travel', 'solotravel'],
+  'food & drink': ['cooking', 'mealprep', 'recipes'],
+  'shopping': ['deals', 'frugal'],
+  'tools': ['selfhosted', 'software', 'opensource'],
+  'business': ['smallbusiness', 'entrepreneur', 'startups'],
+};
+
+/** Get relevant subreddits based on seed keywords and category */
+function getRelevantSubreddits(seeds: string[], category?: string): string[] {
+  const subs = new Set(BASE_REDDIT_SUBREDDITS);
+
+  // Add category-specific subreddits
+  if (category) {
+    const lower = category.toLowerCase();
+    for (const [cat, catSubs] of Object.entries(CATEGORY_SUBREDDITS)) {
+      if (lower.includes(cat) || cat.includes(lower)) {
+        catSubs.forEach((s) => subs.add(s));
+      }
+    }
+  }
+
+  // Add subreddits that match seed keywords
+  for (const seed of seeds) {
+    const lower = seed.toLowerCase();
+    for (const [cat, catSubs] of Object.entries(CATEGORY_SUBREDDITS)) {
+      if (lower.includes(cat.split(' ')[0]!) || catSubs.some((s) => lower.includes(s))) {
+        catSubs.forEach((s) => subs.add(s));
+      }
+    }
+  }
+
+  return Array.from(subs);
+}
 
 
 export class SeoKeywordDiscoverer {
@@ -116,9 +156,9 @@ export class SeoKeywordDiscoverer {
    */
   async discover(
     seedKeywords: string[],
-    opts: { lang?: string; country?: string; appName?: string } = {},
+    opts: { lang?: string; country?: string; appName?: string; category?: string } = {},
   ): Promise<{ keywords: SeoKeyword[]; redditInsights: RedditInsight[] }> {
-    const { lang = 'en', country = 'us', appName } = opts;
+    const { lang = 'en', country = 'us', appName, category } = opts;
     const allKeywords = new Map<string, SeoKeyword>();
     const seeds = seedKeywords.slice(0, 5).map((s) => s.toLowerCase().trim());
 
@@ -243,14 +283,17 @@ export class SeoKeywordDiscoverer {
     // ── 6. Reddit Mining (content ideas, pain points) ──
     const redditInsights: RedditInsight[] = [];
     const seenPostIds = new Set<string>();
+    const relevantSubs = getRelevantSubreddits(seeds, category);
 
     for (const seed of seeds.slice(0, 3)) {
       try {
         const allPosts: typeof posts = [];
-        const posts = await this.reddit.search(seed, { sort: 'relevance', limit: 25 });
+        // Search with "app" suffix to get app-relevant results, not generic posts
+        const searchQuery = seed.includes('app') ? seed : `${seed} app`;
+        const posts = await this.reddit.search(searchQuery, { sort: 'relevance', limit: 25 });
         allPosts.push(...posts);
 
-        for (const sub of REDDIT_SUBREDDITS.slice(0, 5)) {
+        for (const sub of relevantSubs.slice(0, 5)) {
           try {
             const subPosts = await this.reddit.search(seed, { subreddit: sub, sort: 'top', limit: 15 });
             allPosts.push(...subPosts);
@@ -411,13 +454,42 @@ export class SeoKeywordDiscoverer {
     return 'low';
   }
 
-  /** Convert a Reddit post into a content insight */
+  /** Convert a Reddit post into a content insight — only if relevant to apps/software/finance */
   private postToInsight(post: { title: string; subreddit: string; score: number; numComments: number; permalink: string }): RedditInsight | null {
     const title = post.title.trim();
-    if (title.length < 10 || title.length > 300) return null;
+    if (title.length < 15 || title.length > 300) return null;
+
+    const lower = title.toLowerCase();
+
+    // ── Relevance filter: must be about apps, software, budgeting, or actionable finance ──
+    // Reject posts that are personal stories, memes, or off-topic
+    const APP_RELEVANCE_SIGNALS = [
+      'app', 'apps', 'tracker', 'tracking', 'budget', 'budgeting', 'expense',
+      'software', 'tool', 'spreadsheet', 'planner', 'manager', 'download',
+      'android', 'ios', 'iphone', 'play store', 'google play',
+      'recommend', 'suggestion', 'looking for', 'alternative', 'vs',
+      'best', 'top', 'review', 'free', 'open source', 'self-hosted',
+      'how to track', 'how to budget', 'how to save', 'how to manage',
+      'finance app', 'money manager', 'money tracker', 'spending',
+      'savings', 'debt', 'invest', 'credit score',
+      'feature', 'update', 'changelog', 'notification', 'widget',
+      'csv', 'export', 'import', 'sync', 'bank', 'account',
+    ];
+
+    const hasRelevance = APP_RELEVANCE_SIGNALS.some((signal) => lower.includes(signal));
+    if (!hasRelevance) return null;
+
+    // Reject obvious non-content posts (personal drama, memes, meta)
+    const REJECT_PATTERNS = [
+      'aita ', 'am i the', 'my husband', 'my wife', 'my boyfriend', 'my girlfriend',
+      'my mom', 'my dad', 'my sister', 'my brother', 'my kid',
+      'shut up', 'take my money', 'rant', 'vent', 'confession',
+      'upvote', 'karma', 'repost', 'meme', 'lol', 'lmao',
+    ];
+
+    if (REJECT_PATTERNS.some((p) => lower.includes(p))) return null;
 
     // Determine content angle from post title patterns
-    const lower = title.toLowerCase();
     let contentAngle: string;
     let contentType: ContentType;
 

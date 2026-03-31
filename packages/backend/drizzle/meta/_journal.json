@@ -64,6 +64,13 @@
       "when": 1774381048114,
       "tag": "0008_flashy_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774937661105,
+      "tag": "0009_flawless_cannonball",
+      "breakpoints": true
     }
   ]
 }

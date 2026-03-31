@@ -42,6 +42,9 @@ export async function projectRoutes(app: FastifyInstance) {
       mode?: 'live' | 'pre_launch';
       seedKeywords?: string[];
       category?: string;
+      appDescription?: string;
+      keyFeatures?: string[];
+      targetAudience?: string;
     };
 
     if (!body.name) {
@@ -56,7 +59,15 @@ export async function projectRoutes(app: FastifyInstance) {
       }
       const [project] = await db
         .insert(projects)
-        .values({ appId: body.appId, name: body.name, region: body.region ?? 'us', mode })
+        .values({
+          appId: body.appId,
+          name: body.name,
+          region: body.region ?? 'us',
+          mode,
+          appDescription: body.appDescription ?? null,
+          keyFeatures: body.keyFeatures ?? null,
+          targetAudience: body.targetAudience ?? null,
+        })
         .returning();
 
       // Enqueue background auto-setup (competitor discovery + keyword discovery)
@@ -92,6 +103,9 @@ export async function projectRoutes(app: FastifyInstance) {
         mode: 'pre_launch',
         seedKeywords: body.seedKeywords,
         category: body.category ?? null,
+        appDescription: body.appDescription ?? null,
+        keyFeatures: body.keyFeatures ?? null,
+        targetAudience: body.targetAudience ?? null,
       })
       .returning();
 
@@ -163,9 +177,41 @@ export async function projectRoutes(app: FastifyInstance) {
     };
   });
 
+  app.patch('/api/projects/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as {
+      name?: string;
+      region?: string;
+      seedKeywords?: string[];
+      category?: string;
+      appDescription?: string;
+      keyFeatures?: string[];
+      targetAudience?: string;
+    };
+
+    const [updated] = await db
+      .update(projects)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.region !== undefined && { region: body.region }),
+        ...(body.seedKeywords !== undefined && { seedKeywords: body.seedKeywords }),
+        ...(body.category !== undefined && { category: body.category }),
+        ...(body.appDescription !== undefined && { appDescription: body.appDescription }),
+        ...(body.keyFeatures !== undefined && { keyFeatures: body.keyFeatures }),
+        ...(body.targetAudience !== undefined && { targetAudience: body.targetAudience }),
+      })
+      .where(eq(projects.id, id))
+      .returning();
+
+    return updated;
+  });
+
   app.delete('/api/projects/:id', async (request) => {
     const { id } = request.params as { id: string };
-    await db.update(projects).set({ isActive: false }).where(eq(projects.id, id));
+    // Hard delete — cascades clean up discoveredKeywords, projectCompetitors,
+    // listingVersions/Variants/Drafts, seoKeywords/ContentPlans.
+    // Global data (keywords, apps, keywordSnapshots, rankSnapshots) is preserved.
+    await db.delete(projects).where(eq(projects.id, id));
     return { success: true };
   });
 
@@ -227,6 +273,12 @@ export async function projectRoutes(app: FastifyInstance) {
       );
 
     return { data: kws, meta: { total: kws.length } };
+  });
+
+  app.delete('/api/projects/:id/keywords', async (request) => {
+    const { id } = request.params as { id: string };
+    await db.delete(discoveredKeywords).where(eq(discoveredKeywords.projectId, id));
+    return { success: true };
   });
 
   app.post('/api/projects/:id/discover-all', async (request, reply) => {
@@ -360,39 +412,6 @@ export async function projectRoutes(app: FastifyInstance) {
       }
       console.log(`[pre-launch] Phase 1 total: ${allDiscovered.length} raw, ${keywordMap.size} unique`);
 
-      // Phase 1.5: Cross-pollination — extract candidates from ALL competitor listings, rank-verify new ones
-      const allCandidates = new Set<string>();
-      for (const pkg of activeCompetitorPackages) {
-        try {
-          const candidates = await discoverer.extractCandidates(pkg, { country: project.region });
-          console.log(`[pre-launch] Phase 1.5: ${pkg} → ${candidates.length} raw candidates`);
-          candidates.forEach((c) => allCandidates.add(c));
-        } catch (err) {
-          console.error(`[pre-launch] Phase 1.5 error for ${pkg}:`, (err as Error).message);
-        }
-      }
-
-      const newCandidates = Array.from(allCandidates).filter((c) => !keywordMap.has(c));
-      console.log(`[pre-launch] Phase 1.5: ${allCandidates.size} total, ${newCandidates.length} new`);
-
-      if (newCandidates.length > 0) {
-        const crossResults = await discoverer.rankCheckMultiApp(
-          newCandidates,
-          activeCompetitorPackages,
-          { country: project.region },
-        );
-        console.log(`[pre-launch] Phase 1.5: ${crossResults.length} verified`);
-
-        for (const result of crossResults) {
-          keywordMap.set(result.keyword, {
-            keyword: result.keyword,
-            rank: result.bestRank,
-            totalResults: result.totalResults,
-            sourcePackage: result.bestAppId,
-          });
-        }
-      }
-
       const uniqueKeywords = Array.from(keywordMap.values());
       console.log(`[pre-launch] Final: ${uniqueKeywords.length} unique keywords`);
 
@@ -489,43 +508,9 @@ export async function projectRoutes(app: FastifyInstance) {
     }
     console.log(`[discover] Phase 1 total: ${allDiscovered.length} raw, ${keywordMap.size} unique after dedup`);
 
-    // Phase 1.5: Extract candidates from ALL competitor listings + our app,
-    // then rank-check any that weren't already discovered (cross-pollination)
-    const allCandidates = new Set<string>();
-    const allAppIds = [projectApp.packageName, ...competitorPackages];
-
-    for (const pkg of allAppIds) {
-      try {
-        const candidates = await discoverer.extractCandidates(pkg, { country: project.region });
-        console.log(`[discover] Phase 1.5: ${pkg} → ${candidates.length} raw candidates`);
-        candidates.forEach((c) => allCandidates.add(c));
-      } catch (err) {
-        console.error(`[discover] Phase 1.5 error for ${pkg}:`, (err as Error).message);
-      }
-    }
-
-    // Filter out already-discovered keywords
-    const newCandidates = Array.from(allCandidates).filter((c) => !keywordMap.has(c));
-    console.log(`[discover] Phase 1.5: ${allCandidates.size} total candidates, ${newCandidates.length} new (not in Phase 1)`);
-
-    if (newCandidates.length > 0) {
-      // Check which of these keywords anyone (us or competitors) ranks for
-      const crossResults = await discoverer.rankCheckMultiApp(
-        newCandidates,
-        allAppIds,
-        { country: project.region },
-      );
-      console.log(`[discover] Phase 1.5: rank-checked ${newCandidates.length}, ${crossResults.length} verified`);
-
-      for (const result of crossResults) {
-        keywordMap.set(result.keyword, {
-          keyword: result.keyword,
-          rank: result.bestRank,
-          totalResults: result.totalResults,
-          sourcePackage: result.bestAppId,
-        });
-      }
-    }
+    // No cross-pollination step — matches aso-agent's approach.
+    // Only keywords where a specific competitor ranks (from their title/desc autocomplete) are kept.
+    // This prevents junk keywords from unrelated competitor rankings.
 
     const uniqueKeywords = Array.from(keywordMap.values());
     console.log(`[discover] Final: ${uniqueKeywords.length} unique keywords before Phase 2`);

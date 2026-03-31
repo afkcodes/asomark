@@ -90,6 +90,14 @@ export async function seoRoutes(app: FastifyInstance) {
     return { data: keywords, meta: { total: keywords.length } };
   });
 
+  /** Delete all SEO keywords + content plans for a project */
+  app.delete('/api/projects/:id/seo/keywords', async (request) => {
+    const { id } = request.params as { id: string };
+    await db.delete(seoContentPlans).where(eq(seoContentPlans.projectId, id));
+    await db.delete(seoKeywords).where(eq(seoKeywords.projectId, id));
+    return { success: true };
+  });
+
   /** Discover SEO keywords (broad web mining) */
   app.post('/api/projects/:id/seo/discover', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -97,6 +105,8 @@ export async function seoRoutes(app: FastifyInstance) {
 
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return reply.status(404).send({ error: 'Project not found' });
+
+    const [projectApp] = await db.select().from(apps).where(eq(apps.id, project.appId));
 
     const seeds = await resolveSeedKeywords(id, project, body.seeds);
     if (seeds.length === 0) {
@@ -109,6 +119,7 @@ export async function seoRoutes(app: FastifyInstance) {
       lang: 'en',
       country: project.region,
       appName: project.name,
+      category: project.category ?? projectApp?.category ?? undefined,
     });
 
     // Basic relevance filter: keyword must contain at least one seed word (3+ chars)

@@ -1,14 +1,14 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
   LayoutGrid,
-  Zap,
+  Inbox,
   Settings,
 } from 'lucide-react'
 import { cn } from '#/lib/utils'
 
 const navItems = [
   { to: '/projects', label: 'Projects', icon: LayoutGrid },
-  { to: '/strategy', label: 'Strategy', icon: Zap },
+  { to: '/strategy', label: 'Inbox', icon: Inbox },
 ] as const
 
 export function AppShell({ children }: { children: React.ReactNode }) {

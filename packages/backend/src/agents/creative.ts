@@ -1,5 +1,6 @@
 import { db } from '../db/index.js';
 import { apps } from '../db/schema/apps.js';
+import { projects } from '../db/schema/projects.js';
 import { listingSnapshots } from '../db/schema/listings.js';
 import { reviews } from '../db/schema/reviews.js';
 import { eq, desc } from 'drizzle-orm';
@@ -211,6 +212,25 @@ Always respond with valid JSON. No markdown fences.`;
       .map((r) => `[${r.rating}★] ${(r.text ?? '').slice(0, 150)}`)
       .join('\n');
 
+    // 5b. Fetch project context (app description, features, audience)
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.appId, appId))
+      .limit(1);
+
+    const appContextBlock = project
+      ? [
+          project.appDescription ? `## What the App Does:\n${project.appDescription}` : '',
+          (project.keyFeatures as string[] | null)?.length
+            ? `## Key Features:\n${(project.keyFeatures as string[]).map((f) => `- ${f}`).join('\n')}`
+            : '',
+          project.targetAudience ? `## Target Audience:\n${project.targetAudience}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : '';
+
     // 6. Build character limit context
     const isAndroid = platform !== 'ios';
     const titleMax = isAndroid ? 50 : 30;
@@ -236,6 +256,8 @@ Always respond with valid JSON. No markdown fences.`;
       recommendations: string[];
     }>(
       `Generate optimized listing variants for "${targetApp.name}" (${platform}).
+
+${appContextBlock}
 
 ## Current Listing:
 ${currentListing ? JSON.stringify({

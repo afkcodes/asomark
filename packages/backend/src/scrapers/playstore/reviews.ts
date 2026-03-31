@@ -2,11 +2,18 @@ import { request } from 'undici';
 import { BaseScraper, randomUserAgent } from '../base.js';
 import { extractDataBlocks, parseReviews } from './parser.js';
 import { PlayStoreBatchReviewsScraper, type ReviewSort } from './reviews-batch.js';
+import { gplayReviews, GplaySort } from './gplay.js';
 import type { ParsedReview } from './parser.js';
 
 export type { ParsedReview as PlayStoreReview };
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details';
+
+const SORT_TO_GPLAY: Record<ReviewSort, number> = {
+  newest: GplaySort.NEWEST,
+  relevance: GplaySort.HELPFULNESS,
+  rating: GplaySort.RATING,
+};
 
 export class PlayStoreReviewsScraper extends BaseScraper {
   private batchScraper = new PlayStoreBatchReviewsScraper();
@@ -16,8 +23,10 @@ export class PlayStoreReviewsScraper extends BaseScraper {
   }
 
   /**
-   * Get reviews — uses batchexecute API by default (supports pagination).
-   * Falls back to HTML parsing if batchexecute fails.
+   * Get reviews — tries sources in order:
+   * 1. google-play-scraper (community-maintained, handles structure changes)
+   * 2. batchexecute API (our own implementation, supports pagination)
+   * 3. HTML parsing fallback (limited to ~20-40 reviews)
    */
   async getReviews(
     packageName: string,
@@ -30,6 +39,33 @@ export class PlayStoreReviewsScraper extends BaseScraper {
   ): Promise<ParsedReview[]> {
     const { num = 100, sort = 'newest', lang = 'en', country = 'us' } = opts;
 
+    // Primary: google-play-scraper
+    try {
+      const { data } = await gplayReviews(packageName, {
+        num,
+        sort: SORT_TO_GPLAY[sort],
+        lang,
+        country,
+      });
+      if (data.length > 0) {
+        return data.map((r) => ({
+          id: r.id,
+          userName: r.userName,
+          userImage: r.userImage,
+          date: r.date,
+          score: r.score,
+          text: r.text,
+          thumbsUp: r.thumbsUp,
+          version: r.version,
+          replyText: r.replyText,
+          replyDate: r.replyDate,
+        }));
+      }
+    } catch {
+      // fall through
+    }
+
+    // Fallback: batchexecute API
     try {
       const reviews = await this.batchScraper.getReviews(packageName, { num, sort, lang, country });
       if (reviews.length > 0) return reviews;
@@ -37,7 +73,7 @@ export class PlayStoreReviewsScraper extends BaseScraper {
       // Fall through to HTML parsing
     }
 
-    // Fallback: HTML detail page parsing (limited to ~20-40 reviews)
+    // Last resort: HTML detail page parsing (limited to ~20-40 reviews)
     return this.getReviewsFromHtml(packageName, { num, lang, country });
   }
 
@@ -83,6 +119,14 @@ export class PlayStoreReviewsScraper extends BaseScraper {
     packageName: string,
     opts: { num?: number; lang?: string; country?: string } = {},
   ): Promise<ParsedReview[]> {
-    return this.batchScraper.getNegativeReviews(packageName, opts);
+    const num = opts.num ?? 50;
+    // Fetch more since we filter
+    const reviews = await this.getReviews(packageName, {
+      num: num * 3,
+      sort: 'rating',
+      lang: opts.lang,
+      country: opts.country,
+    });
+    return reviews.filter((r) => r.score <= 2).slice(0, num);
   }
 }

@@ -1,13 +1,22 @@
-import { request } from 'undici';
 import * as cheerio from 'cheerio';
-import { BaseScraper, randomUserAgent } from '../base.js';
-import { extractDataBlocks, parseSearchResults } from './parser.js';
-import type { ParsedSearchResult } from './parser.js';
+import { BaseScraper } from '../base.js';
+import { gplaySearch, gplaySuggest } from './gplay.js';
+import type { GplaySearchResult } from './gplay.js';
+
+export interface ParsedSearchResult {
+  appId: string;
+  title: string;
+  developer: string;
+  icon: string;
+  score: number;
+  scoreText: string;
+  installs: string;
+  category: string;
+  free: boolean;
+  url: string;
+}
 
 export type { ParsedSearchResult as PlayStoreSearchResult };
-
-const PLAY_STORE_SEARCH_URL = 'https://play.google.com/store/search';
-const GOOGLE_SUGGEST_URL = 'https://suggestqueries.google.com/complete/search';
 
 export class PlayStoreSearchScraper extends BaseScraper {
   constructor() {
@@ -17,43 +26,49 @@ export class PlayStoreSearchScraper extends BaseScraper {
   /** Search Play Store for a keyword and return ranked results */
   async search(
     term: string,
-    opts: { lang?: string; country?: string } = {},
+    opts: { lang?: string; country?: string; num?: number } = {},
   ): Promise<ParsedSearchResult[]> {
-    const { lang = 'en', country = 'us' } = opts;
+    const { lang = 'en', country = 'us', num = 50 } = opts;
 
     return this.cached(`playstore:search:${term}:${lang}:${country}`, () =>
       this.enqueue(async () => {
-        const url = `${PLAY_STORE_SEARCH_URL}?q=${encodeURIComponent(term)}&c=apps&hl=${lang}&gl=${country}`;
-        const { body, statusCode } = await request(url, {
-          headers: { 'User-Agent': randomUserAgent() },
-        });
-        const html = await body.text();
-        if (statusCode !== 200) {
-          throw new Error(`Play Store search returned ${statusCode}`);
-        }
-
-        // Try JSON data blocks first (richer data)
-        const blocks = extractDataBlocks(html);
-        const jsonResults = parseSearchResults(blocks);
-
-        // Also extract from HTML links (catches all results including additional clusters)
-        const htmlResults = this.parseSearchResultsFromHtml(html);
-
-        // Merge: JSON results take priority (richer data), add any HTML-only results
-        const seen = new Set(jsonResults.map((r) => r.appId));
-        for (const r of htmlResults) {
-          if (!seen.has(r.appId)) {
-            jsonResults.push(r);
-            seen.add(r.appId);
+        // Primary: google-play-scraper (uses internal APIs, community-maintained)
+        try {
+          const results = await gplaySearch(term, { num, lang, country });
+          if (results.length > 0) {
+            return results.map((r) => this.fromGplay(r));
           }
+        } catch (err) {
+          console.warn(`[search] gplay failed for "${term}", falling back to HTML:`, (err as Error).message);
         }
 
-        return jsonResults;
+        // Fallback: direct HTML scraping (less reliable but independent)
+        return this.searchFromHtml(term, { lang, country });
       }),
     );
   }
 
-  /** Parse search results from HTML links (like aso-agent's Cheerio approach) */
+  /** Fallback: parse search results from HTML using CSS selectors */
+  private async searchFromHtml(
+    term: string,
+    opts: { lang: string; country: string },
+  ): Promise<ParsedSearchResult[]> {
+    const { default: undici } = await import('undici');
+    const { randomUserAgent } = await import('../base.js');
+
+    const url = `https://play.google.com/store/search?q=${encodeURIComponent(term)}&c=apps&hl=${opts.lang}&gl=${opts.country}`;
+    const { body, statusCode } = await undici.request(url, {
+      headers: { 'User-Agent': randomUserAgent() },
+    });
+    const html = await body.text();
+    if (statusCode !== 200) {
+      throw new Error(`Play Store search returned ${statusCode}`);
+    }
+
+    return this.parseSearchResultsFromHtml(html);
+  }
+
+  /** Parse search results from HTML links (Cheerio CSS selectors) */
   private parseSearchResultsFromHtml(html: string): ParsedSearchResult[] {
     const $ = cheerio.load(html);
     const results: ParsedSearchResult[] = [];
@@ -100,6 +115,22 @@ export class PlayStoreSearchScraper extends BaseScraper {
     return results;
   }
 
+  /** Convert gplay search result to our interface */
+  private fromGplay(r: GplaySearchResult): ParsedSearchResult {
+    return {
+      appId: r.appId,
+      title: r.title,
+      developer: r.developer,
+      icon: r.icon,
+      score: r.score,
+      scoreText: r.score ? String(r.score.toFixed(1)) : '',
+      installs: r.installs ?? '',
+      category: '',
+      free: r.free,
+      url: r.url,
+    };
+  }
+
   /** Get rank of a specific app for a keyword */
   async getRank(
     term: string,
@@ -135,7 +166,7 @@ export class PlayStoreSearchScraper extends BaseScraper {
     return rankMap;
   }
 
-  /** Get autocomplete suggestions using Google suggest with Play Store datasource */
+  /** Get autocomplete suggestions using google-play-scraper */
   async suggest(
     term: string,
     opts: { lang?: string; country?: string } = {},
@@ -144,10 +175,19 @@ export class PlayStoreSearchScraper extends BaseScraper {
 
     return this.cached(`playstore:suggest:${term}:${lang}:${country}`, () =>
       this.enqueue(async () => {
-        // Use Google suggest with client=firefox for JSON response
-        // ds=ah targets Android/Play Store suggestions
-        const url = `${GOOGLE_SUGGEST_URL}?client=firefox&q=${encodeURIComponent(term)}&hl=${lang}&gl=${country}`;
-        const { body } = await request(url, {
+        // Primary: google-play-scraper suggest (fast, no browser needed)
+        try {
+          const suggestions = await gplaySuggest(term);
+          if (suggestions.length > 0) return suggestions;
+        } catch {
+          // fall through
+        }
+
+        // Fallback: Google suggest API with firefox client
+        const { default: undici } = await import('undici');
+        const { randomUserAgent } = await import('../base.js');
+        const url = `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(term)}&hl=${lang}&gl=${country}`;
+        const { body } = await undici.request(url, {
           headers: { 'User-Agent': randomUserAgent() },
         });
         const data = (await body.json()) as [string, string[]];

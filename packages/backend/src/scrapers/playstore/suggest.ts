@@ -1,20 +1,20 @@
 /**
  * Play Store autocomplete suggestion scraper.
- * Uses Playwright to interact with the actual Play Store search bar
- * and capture real autocomplete suggestions — the same approach
- * aso-agent uses with Puppeteer.
  *
- * This gives us the actual keywords people type in the Play Store,
- * which are far more relevant for ASO than Google web suggestions.
+ * Primary: google-play-scraper suggest API (fast, no browser needed).
+ * Fallback: Playwright browser automation for the actual Play Store search bar.
+ *
+ * The Playwright path is kept for alphabet soup operations where we
+ * need to reuse a single browser page for 27 queries efficiently.
  */
 import { chromium, type Browser } from 'playwright';
 import { BaseScraper } from '../base.js';
+import { gplaySuggest } from './gplay.js';
 
 export class PlayStoreSuggestScraper extends BaseScraper {
   private browser: Browser | null = null;
 
   constructor() {
-    // Lower concurrency — browser is heavy
     super({ concurrency: 1, intervalMs: 1000, cacheTtlSeconds: 1800 });
   }
 
@@ -28,7 +28,7 @@ export class PlayStoreSuggestScraper extends BaseScraper {
     return this.browser;
   }
 
-  /** Get Play Store autocomplete suggestions by typing into the search bar */
+  /** Get Play Store autocomplete suggestions */
   async suggest(
     term: string,
     opts: { lang?: string; country?: string } = {},
@@ -37,81 +37,104 @@ export class PlayStoreSuggestScraper extends BaseScraper {
 
     return this.cached(`playstore:suggest:${term}:${lang}:${country}`, () =>
       this.enqueue(async () => {
-        const browser = await this.getBrowser();
-        const context = await browser.newContext({
-          userAgent:
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        });
-        const page = await context.newPage();
-
+        // Primary: Playwright browser — types into actual Play Store search bar
+        // to get real autocomplete suggestions (matches aso-agent's Puppeteer approach).
+        // This returns more results (5-8) than the API endpoint (max 5).
         try {
-          // Navigate to Play Store search page
-          await page.goto(
-            `https://play.google.com/store/search?q=${encodeURIComponent(term)}&c=apps&hl=${lang}&gl=${country}`,
-            { waitUntil: 'networkidle', timeout: 15000 },
-          );
-
-          // Find and interact with search input
-          const searchInput = page.locator('input[aria-label="Search Google Play"]');
-          await searchInput.click();
-
-          // Select all existing text and replace with our term
-          await page.keyboard.press('Control+a');
-          await page.keyboard.type(term, { delay: 50 });
-
-          // Wait for autocomplete dropdown to appear
-          await page.waitForTimeout(1500);
-
-          // Extract suggestion text from autocomplete dropdown
-          const suggestions = await page.evaluate(`
-            (() => {
-              const items = document.querySelectorAll(
-                '[role="option"], [role="listbox"] li, .qhE8Fb'
-              );
-              const results = [];
-
-              items.forEach((item) => {
-                const spans = item.querySelectorAll('span');
-                let text = '';
-
-                spans.forEach((span) => {
-                  const spanText = (span.textContent || '').trim();
-                  if (
-                    spanText &&
-                    spanText.length > 2 &&
-                    !spanText.includes('search') &&
-                    !spanText.includes('north') &&
-                    !spanText.includes('west') &&
-                    !/^[a-z_]+$/.test(spanText)
-                  ) {
-                    text = spanText;
-                  }
-                });
-
-                if (!text) {
-                  const rawText = (item.textContent || '').trim();
-                  text = rawText
-                    .replace(/search/gi, '')
-                    .replace(/north_west/gi, '')
-                    .replace(/arrow_back/gi, '')
-                    .trim();
-                }
-
-                if (text && text.length > 3 && !results.includes(text)) {
-                  results.push(text);
-                }
-              });
-
-              return results;
-            })()
-          `) as string[];
-
-          return suggestions;
-        } finally {
-          await context.close();
+          const suggestions = await this.suggestViaBrowser(term, lang, country);
+          if (suggestions.length > 0) return suggestions;
+        } catch {
+          // fall through to API
         }
+
+        // Fallback: google-play-scraper suggest API (fast, but only 5 results)
+        try {
+          const suggestions = await gplaySuggest(term);
+          if (suggestions.length > 0) return suggestions;
+        } catch {
+          // no suggestions available
+        }
+
+        return [];
       }),
     );
+  }
+
+  /** Browser-based suggest (fallback) */
+  private async suggestViaBrowser(
+    term: string,
+    lang: string,
+    country: string,
+  ): Promise<string[]> {
+    const browser = await this.getBrowser();
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+    const page = await context.newPage();
+
+    try {
+      await page.goto(
+        `https://play.google.com/store/search?q=${encodeURIComponent(term)}&c=apps&hl=${lang}&gl=${country}`,
+        { waitUntil: 'networkidle', timeout: 15000 },
+      );
+
+      const searchInput = page.locator('input[aria-label="Search Google Play"]');
+      await searchInput.click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type(term, { delay: 50 });
+      await page.waitForTimeout(1500);
+
+      return await this.extractSuggestions(page);
+    } finally {
+      await context.close();
+    }
+  }
+
+  /** Extract suggestions from the autocomplete dropdown DOM */
+  private async extractSuggestions(page: { evaluate: (script: string) => Promise<unknown> }): Promise<string[]> {
+    return await page.evaluate(`
+      (() => {
+        const items = document.querySelectorAll(
+          '[role="option"], [role="listbox"] li, .qhE8Fb'
+        );
+        const results = [];
+
+        items.forEach((item) => {
+          const spans = item.querySelectorAll('span');
+          let text = '';
+
+          spans.forEach((span) => {
+            const spanText = (span.textContent || '').trim();
+            if (
+              spanText &&
+              spanText.length > 2 &&
+              !spanText.includes('search') &&
+              !spanText.includes('north') &&
+              !spanText.includes('west') &&
+              !/^[a-z_]+$/.test(spanText)
+            ) {
+              text = spanText;
+            }
+          });
+
+          if (!text) {
+            const rawText = (item.textContent || '').trim();
+            text = rawText
+              .replace(/search/gi, '')
+              .replace(/north_west/gi, '')
+              .replace(/arrow_back/gi, '')
+              .trim();
+          }
+
+          if (text && text.length > 3 && !results.includes(text)) {
+            results.push(text);
+          }
+        });
+
+        return results;
+      })()
+    `) as string[];
   }
 
   /**
@@ -130,8 +153,7 @@ export class PlayStoreSuggestScraper extends BaseScraper {
   }
 
   /** Alphabet soup: mine suggestions for prefix + each letter a-z.
-   * Uses a single browser page and retypes for each letter — much faster
-   * than creating a new context per query.
+   * Uses a single browser page for efficiency — browser reuse is important here.
    */
   async alphabetSoup(
     prefix: string,
@@ -140,6 +162,15 @@ export class PlayStoreSuggestScraper extends BaseScraper {
     const { lang = 'en', country = 'us' } = opts;
     const allSuggestions = new Set<string>();
 
+    // First try to get base suggestions via the fast path
+    try {
+      const baseSuggestions = await gplaySuggest(prefix);
+      for (const s of baseSuggestions) allSuggestions.add(s);
+    } catch {
+      // continue with browser
+    }
+
+    // For alphabet soup, use browser — single page reused for all 26 letters
     const browser = await this.getBrowser();
     const context = await browser.newContext({
       userAgent:
@@ -148,7 +179,6 @@ export class PlayStoreSuggestScraper extends BaseScraper {
     const page = await context.newPage();
 
     try {
-      // Navigate once
       await page.goto(
         `https://play.google.com/store/search?q=${encodeURIComponent(prefix)}&c=apps&hl=${lang}&gl=${country}`,
         { waitUntil: 'networkidle', timeout: 15000 },
@@ -156,7 +186,6 @@ export class PlayStoreSuggestScraper extends BaseScraper {
 
       const searchInput = page.locator('input[aria-label="Search Google Play"]');
 
-      // Mine base prefix + each letter
       const queries = [prefix, ...'abcdefghijklmnopqrstuvwxyz'.split('').map((l) => `${prefix} ${l}`)];
 
       for (const query of queries) {
@@ -166,44 +195,7 @@ export class PlayStoreSuggestScraper extends BaseScraper {
           await page.keyboard.type(query, { delay: 30 });
           await page.waitForTimeout(1000);
 
-          const suggestions = await page.evaluate(`
-            (() => {
-              const items = document.querySelectorAll(
-                '[role="option"], [role="listbox"] li, .qhE8Fb'
-              );
-              const results = [];
-              items.forEach((item) => {
-                const spans = item.querySelectorAll('span');
-                let text = '';
-                spans.forEach((span) => {
-                  const spanText = (span.textContent || '').trim();
-                  if (
-                    spanText &&
-                    spanText.length > 2 &&
-                    !spanText.includes('search') &&
-                    !spanText.includes('north') &&
-                    !spanText.includes('west') &&
-                    !/^[a-z_]+$/.test(spanText)
-                  ) {
-                    text = spanText;
-                  }
-                });
-                if (!text) {
-                  const rawText = (item.textContent || '').trim();
-                  text = rawText
-                    .replace(/search/gi, '')
-                    .replace(/north_west/gi, '')
-                    .replace(/arrow_back/gi, '')
-                    .trim();
-                }
-                if (text && text.length > 3 && !results.includes(text)) {
-                  results.push(text);
-                }
-              });
-              return results;
-            })()
-          `) as string[];
-
+          const suggestions = await this.extractSuggestions(page);
           for (const s of suggestions) {
             allSuggestions.add(s);
           }

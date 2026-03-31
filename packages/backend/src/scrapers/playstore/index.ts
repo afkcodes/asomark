@@ -10,3 +10,6 @@ export type { PlayStoreSearchResult } from './search.js';
 export type { PlayStoreReview } from './reviews.js';
 export type { ReviewSort } from './reviews-batch.js';
 export type { ChartEntry, ChartCollection } from './charts.js';
+
+// Re-export gplay utilities for direct access when needed
+export { gplaySearch, gplayApp, gplaySuggest, gplayReviews, gplaySimilar } from './gplay.js';

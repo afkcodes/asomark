@@ -82,6 +82,17 @@ export function SeoTab({ projectId, projectName }: SeoTabProps) {
     },
   })
 
+  const deleteAllMutation = useMutation({
+    mutationFn: () => seo.deleteAll(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['seo-keywords', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['seo-content-plans', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['seo-stats', projectId] })
+      toast('All SEO keywords & content plans cleared', 'info')
+    },
+  })
+
+  const [confirmClear, setConfirmClear] = useState(false)
   const hasKeywords = keywords.length > 0
 
   return (
@@ -153,6 +164,22 @@ export function SeoTab({ projectId, projectName }: SeoTabProps) {
             )}
             Full SEO Analysis
           </Button>
+          {hasKeywords && (
+            confirmClear ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-tertiary">Clear all?</span>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmClear(false)}>Cancel</Button>
+                <Button size="sm" variant="danger" onClick={() => { deleteAllMutation.mutate(); setConfirmClear(false) }}>Clear</Button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="text-xs text-text-muted hover:text-rose transition-colors cursor-pointer"
+              >
+                Clear All
+              </button>
+            )
+          )}
         </div>
       </div>
 

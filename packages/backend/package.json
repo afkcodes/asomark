@@ -25,6 +25,7 @@
     "dotenv": "latest",
     "drizzle-orm": "latest",
     "fastify": "latest",
+    "google-play-scraper": "^10.1.2",
     "google-trends-api": "^4.9.2",
     "ioredis": "latest",
     "nanoid": "latest",

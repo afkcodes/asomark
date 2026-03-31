@@ -32,6 +32,12 @@ interface ListingEditorProps {
   projectId: string
   projectName: string
   keywords: DiscoveredKeyword[]
+  /** Pre-populated from Play Store listing (for live apps) */
+  storeListing?: {
+    title?: string | null
+    shortDesc?: string | null
+    longDesc?: string | null
+  } | null
 }
 
 const STRATEGY_META: Record<string, { icon: typeof Target; label: string; color: string }> = {
@@ -42,7 +48,7 @@ const STRATEGY_META: Record<string, { icon: typeof Target; label: string; color:
   balanced: { icon: Scale, label: 'Balanced', color: 'text-accent' },
 }
 
-export function ListingEditor({ projectId, projectName, keywords }: ListingEditorProps) {
+export function ListingEditor({ projectId, projectName, keywords, storeListing }: ListingEditorProps) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [shortDescription, setShortDescription] = useState('')
@@ -69,7 +75,7 @@ export function ListingEditor({ projectId, projectName, keywords }: ListingEdito
     queryFn: () => projectsApi.listingVersions(projectId),
   })
 
-  // Initialize from draft
+  // Initialize from draft, or from Play Store listing if no draft exists
   useEffect(() => {
     if (draft) {
       setTitle(draft.title || '')
@@ -79,8 +85,14 @@ export function ListingEditor({ projectId, projectName, keywords }: ListingEdito
       setDeveloperName(draft.developerName || '')
     } else if (!draftLoading) {
       setAppName(projectName)
+      // Auto-fill from Play Store listing if available (live apps)
+      if (storeListing) {
+        if (storeListing.title && !title) setTitle(storeListing.title)
+        if (storeListing.shortDesc && !shortDescription) setShortDescription(storeListing.shortDesc)
+        if (storeListing.longDesc && !fullDescription) setFullDescription(storeListing.longDesc)
+      }
     }
-  }, [draft, draftLoading, projectName])
+  }, [draft, draftLoading, projectName, storeListing])
 
   // Save draft mutation
   const saveDraft = useMutation({
@@ -129,20 +141,13 @@ export function ListingEditor({ projectId, projectName, keywords }: ListingEdito
     },
   })
 
-  // Debounced auto-save and score
+  // Debounced auto-save (no auto-scoring — user triggers score manually)
   const scheduleAutoSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current)
 
     saveTimerRef.current = setTimeout(() => {
       saveDraft.mutate()
     }, 1000)
-
-    scoreTimerRef.current = setTimeout(() => {
-      if (title || shortDescription || fullDescription) {
-        scoreListing.mutate()
-      }
-    }, 1500)
   }, [title, shortDescription, fullDescription, appName, developerName])
 
   // Trigger auto-save on content change
@@ -152,9 +157,17 @@ export function ListingEditor({ projectId, projectName, keywords }: ListingEdito
     }
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current)
     }
   }, [title, shortDescription, fullDescription, appName, developerName, draftLoading])
+
+  // Auto-score on initial load when content is present (from draft or store listing)
+  const hasScored = useRef(false)
+  useEffect(() => {
+    if (!hasScored.current && !draftLoading && (title || shortDescription || fullDescription)) {
+      hasScored.current = true
+      scoreListing.mutate()
+    }
+  }, [draftLoading, title, shortDescription, fullDescription])
 
   // Get top keywords for highlighting
   const topKeywords = keywords
@@ -419,9 +432,29 @@ export function ListingEditor({ projectId, projectName, keywords }: ListingEdito
 
         {/* Score Card */}
         <div className="col-span-3 sticky top-4 self-start">
-          <h3 className="text-sm font-semibold text-text-primary mb-4">
-            Optimization Score
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-text-primary">
+              Optimization Score
+            </h3>
+            <button
+              onClick={() => scoreListing.mutate()}
+              disabled={scoreListing.isPending || (!title && !shortDescription && !fullDescription)}
+              className={cn(
+                'flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                scoreListing.isPending
+                  ? 'bg-accent/20 text-accent cursor-wait'
+                  : !title && !shortDescription && !fullDescription
+                    ? 'bg-surface-2 text-text-muted cursor-not-allowed'
+                    : 'bg-accent/10 text-accent hover:bg-accent/20',
+              )}
+            >
+              {scoreListing.isPending ? (
+                <><Spinner size={10} /> Scoring...</>
+              ) : (
+                <><Target size={10} /> {score ? 'Rescore' : 'Get Score'}</>
+              )}
+            </button>
+          </div>
           <ListingScoreCard score={score} isLoading={scoreListing.isPending} />
         </div>
       </div>
