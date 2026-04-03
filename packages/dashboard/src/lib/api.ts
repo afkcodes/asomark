@@ -61,6 +61,8 @@ export interface Project {
   appDescription?: string | null
   keyFeatures?: string[] | null
   targetAudience?: string | null
+  websiteUrl?: string | null
+  brandProfile?: BrandProfile | null
   isActive: boolean
   createdAt: string
   app?: App
@@ -344,6 +346,7 @@ export const projects = {
     appDescription?: string
     keyFeatures?: string[]
     targetAudience?: string
+    websiteUrl?: string
   }) => api.patch<Project>(`/api/projects/${id}`, data),
   delete: (id: string) => api.del(`/api/projects/${id}`),
   keywords: (id: string) => list<DiscoveredKeyword>(`/api/projects/${id}/keywords`),
@@ -593,6 +596,31 @@ export const siteAudit = {
     api.get<{ audit: SiteAudit | null; pages: SiteAuditPage[] }>(`/api/projects/${projectId}/site-audit/latest`),
   history: (projectId: string) =>
     api.get<{ data: SiteAudit[] }>(`/api/projects/${projectId}/site-audit/history`),
+}
+
+// ─── Brand Profile + Content Writer ───
+
+export interface BrandProfile {
+  tone: string
+  values: string[]
+  differentiators: string[]
+  tagline: string
+  brandVoice: string
+  contentThemes: string[]
+}
+
+export const brandProfile = {
+  get: (projectId: string) =>
+    api.get<{ websiteUrl: string | null; profile: BrandProfile | null }>(`/api/projects/${projectId}/brand-profile`),
+  build: (projectId: string, url: string) =>
+    api.post<BrandProfile>(`/api/projects/${projectId}/brand-profile`, { url }),
+}
+
+export const contentWriter = {
+  generate: (projectId: string, planId: string) =>
+    api.post<{ article: string; tokensUsed: { input: number; output: number } }>(
+      `/api/projects/${projectId}/content/generate`, { planId },
+    ),
 }
 
 // ─── AI Visibility ───

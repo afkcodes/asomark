@@ -28,7 +28,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/ui/spinner'
 import { useToast } from '#/components/ui/toast'
-import { seo, type SeoKeyword, type SeoReport, type SeoContentPlan, type SeoStats } from '#/lib/api'
+import { seo, contentWriter, type SeoKeyword, type SeoReport, type SeoContentPlan, type SeoStats } from '#/lib/api'
 import { cn } from '#/lib/utils'
 
 interface SeoTabProps {
@@ -556,6 +556,7 @@ function ContentPlanView({
                 <ContentPlanCard
                   key={plan.id}
                   plan={plan}
+                  projectId={projectId}
                   onStatusChange={(status) => updateStatus.mutate({ planId: plan.id, status })}
                 />
               ))}
@@ -569,12 +570,27 @@ function ContentPlanView({
 
 function ContentPlanCard({
   plan,
+  projectId,
   onStatusChange,
 }: {
   plan: SeoContentPlan
+  projectId: string
   onStatusChange: (status: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const generateArticle = useMutation({
+    mutationFn: () => contentWriter.generate(projectId, plan.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['seo-content-plans', projectId] })
+      toast('Article generated — check the outline section', 'success')
+    },
+    onError: (err) => {
+      toast(`Generation failed: ${(err as Error).message}`, 'error')
+    },
+  })
   const ContentIcon = CONTENT_TYPE_ICON[plan.contentType] ?? FileText
 
   const statusConfig: Record<string, { label: string; variant: 'accent' | 'success' | 'warning' | 'default' | 'muted' }> = {
@@ -647,6 +663,17 @@ function ContentPlanCard({
           )}
 
           <div className="flex gap-2 mt-4">
+            <Button
+              size="sm"
+              onClick={() => generateArticle.mutate()}
+              disabled={generateArticle.isPending}
+            >
+              {generateArticle.isPending ? (
+                <><Loader2 size={12} className="mr-1 animate-spin" /> Generating...</>
+              ) : (
+                <><Sparkles size={12} className="mr-1" /> Generate Article</>
+              )}
+            </Button>
             {plan.status !== 'in_progress' && (
               <Button size="sm" variant="secondary" onClick={() => onStatusChange('in_progress')}>
                 Start Writing

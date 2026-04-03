@@ -187,6 +187,7 @@ export async function projectRoutes(app: FastifyInstance) {
       appDescription?: string;
       keyFeatures?: string[];
       targetAudience?: string;
+      websiteUrl?: string;
     };
 
     const [updated] = await db
@@ -199,6 +200,7 @@ export async function projectRoutes(app: FastifyInstance) {
         ...(body.appDescription !== undefined && { appDescription: body.appDescription }),
         ...(body.keyFeatures !== undefined && { keyFeatures: body.keyFeatures }),
         ...(body.targetAudience !== undefined && { targetAudience: body.targetAudience }),
+        ...(body.websiteUrl !== undefined && { websiteUrl: body.websiteUrl }),
       })
       .where(eq(projects.id, id))
       .returning();

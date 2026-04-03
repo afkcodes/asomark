@@ -18,6 +18,7 @@ import { settingsRoutes } from './settings.js';
 import { gscRoutes } from './gsc.js';
 import { siteAuditRoutes } from './site-audit.js';
 import { aiVisibilityRoutes } from './ai-visibility.js';
+import { contentRoutes } from './content.js';
 
 export async function routes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -44,4 +45,5 @@ export async function routes(app: FastifyInstance) {
   await app.register(gscRoutes);
   await app.register(siteAuditRoutes);
   await app.register(aiVisibilityRoutes);
+  await app.register(contentRoutes);
 }

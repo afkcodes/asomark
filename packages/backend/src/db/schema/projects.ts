@@ -12,6 +12,15 @@ export const projects = pgTable('projects', {
   appDescription: text('app_description'),
   keyFeatures: json('key_features').$type<string[]>(),
   targetAudience: text('target_audience'),
+  websiteUrl: text('website_url'),
+  brandProfile: json('brand_profile').$type<{
+    tone: string;
+    values: string[];
+    differentiators: string[];
+    tagline: string;
+    brandVoice: string;
+    contentThemes: string[];
+  }>(),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
