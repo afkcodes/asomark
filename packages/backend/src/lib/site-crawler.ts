@@ -1,11 +1,10 @@
 /**
  * BFS site crawler for technical SEO auditing.
- * Crawls a website from the homepage, follows internal links,
- * and checks each page for common SEO issues.
+ * Uses Playwright to render JavaScript-heavy pages (SPAs, React/Next.js)
+ * before checking for SEO issues — matches what Googlebot sees.
  */
-import { request } from 'undici';
+import { chromium, type Browser } from 'playwright';
 import * as cheerio from 'cheerio';
-import { randomUserAgent } from '../scrapers/base.js';
 
 // ─── Types ───
 
@@ -46,6 +45,7 @@ export interface CrawlProgress {
 export class SiteCrawler {
   private maxPages: number;
   private delayMs: number;
+  private browser: Browser | null = null;
 
   constructor(opts: { maxPages?: number; delayMs?: number } = {}) {
     this.maxPages = opts.maxPages ?? 50;
@@ -54,7 +54,8 @@ export class SiteCrawler {
 
   /**
    * Crawl a website starting from the given URL.
-   * Uses BFS to follow internal links up to maxPages.
+   * Uses Playwright to render pages (handles SPAs/React/Next.js).
+   * BFS to follow internal links up to maxPages.
    */
   async crawl(
     startUrl: string,
@@ -63,77 +64,110 @@ export class SiteCrawler {
     const baseUrl = new URL(startUrl);
     const baseOrigin = baseUrl.origin;
 
+    // Launch browser once, reuse for all pages
+    this.browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+
     const visited = new Set<string>();
     const queue: string[] = [this.normalizeUrl(startUrl)];
     const results: PageAuditResult[] = [];
 
-    while (queue.length > 0 && visited.size < this.maxPages) {
-      const url = queue.shift()!;
-      if (visited.has(url)) continue;
-      visited.add(url);
+    try {
+      while (queue.length > 0 && visited.size < this.maxPages) {
+        const url = queue.shift()!;
+        if (visited.has(url)) continue;
+        visited.add(url);
 
-      onProgress?.({
-        crawled: visited.size,
-        total: visited.size + queue.length,
-        currentUrl: url,
-      });
-
-      try {
-        const result = await this.auditPage(url, baseOrigin);
-        results.push(result);
-
-        // Add discovered internal links to queue
-        for (const link of result.discoveredUrls) {
-          const normalized = this.normalizeUrl(link);
-          if (!visited.has(normalized) && !queue.includes(normalized)) {
-            queue.push(normalized);
-          }
-        }
-      } catch (err) {
-        // Page failed to load — record as a broken/error page
-        results.push({
-          url,
-          statusCode: 0,
-          loadTimeMs: 0,
-          title: null,
-          titleLength: 0,
-          metaDescription: null,
-          metaDescriptionLength: 0,
-          h1Count: 0,
-          h1Text: null,
-          imageCount: 0,
-          imagesWithoutAlt: 0,
-          internalLinks: 0,
-          externalLinks: 0,
-          brokenLinks: [],
-          wordCount: 0,
-          hasCanonical: false,
-          canonicalUrl: null,
-          hasRobotsMeta: false,
-          schemaTypes: [],
-          issues: [{ type: 'critical', code: 'FETCH_ERROR', message: `Failed to load: ${(err as Error).message}` }],
-          score: 0,
-          discoveredUrls: [],
+        onProgress?.({
+          crawled: visited.size,
+          total: visited.size + queue.length,
+          currentUrl: url,
         });
-      }
 
-      // Rate limit
-      if (queue.length > 0) {
-        await new Promise((r) => setTimeout(r, this.delayMs));
+        try {
+          const result = await this.auditPage(url, baseOrigin);
+          results.push(result);
+
+          // Add discovered internal links to queue
+          for (const link of result.discoveredUrls) {
+            const normalized = this.normalizeUrl(link);
+            if (!visited.has(normalized) && !queue.includes(normalized)) {
+              queue.push(normalized);
+            }
+          }
+        } catch (err) {
+          results.push({
+            url,
+            statusCode: 0,
+            loadTimeMs: 0,
+            title: null,
+            titleLength: 0,
+            metaDescription: null,
+            metaDescriptionLength: 0,
+            h1Count: 0,
+            h1Text: null,
+            imageCount: 0,
+            imagesWithoutAlt: 0,
+            internalLinks: 0,
+            externalLinks: 0,
+            brokenLinks: [],
+            wordCount: 0,
+            hasCanonical: false,
+            canonicalUrl: null,
+            hasRobotsMeta: false,
+            schemaTypes: [],
+            issues: [{ type: 'critical', code: 'FETCH_ERROR', message: `Failed to load: ${(err as Error).message}` }],
+            score: 0,
+            discoveredUrls: [],
+          });
+        }
+
+        // Rate limit between pages
+        if (queue.length > 0) {
+          await new Promise((r) => setTimeout(r, this.delayMs));
+        }
       }
+    } finally {
+      await this.browser.close();
+      this.browser = null;
     }
 
     return results;
   }
 
-  /** Audit a single page for SEO issues */
+  /** Audit a single page for SEO issues — uses Playwright to render JS */
   private async auditPage(url: string, baseOrigin: string): Promise<PageAuditResult> {
-    const start = Date.now();
-    const { body, statusCode } = await request(url, {
-      headers: { 'User-Agent': randomUserAgent() },
+    if (!this.browser) throw new Error('Browser not initialized');
+
+    const context = await this.browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
-    const html = await body.text();
+    const page = await context.newPage();
+
+    let statusCode = 200;
+    const start = Date.now();
+
+    // Capture the response status code
+    page.on('response', (response) => {
+      if (response.url() === url || response.url() === url + '/') {
+        statusCode = response.status();
+      }
+    });
+
+    try {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+    } catch {
+      // Timeout or navigation error — still try to extract what we can
+    }
+
+    // Wait a bit more for any lazy-loaded content
+    await page.waitForTimeout(1000);
+
+    const html = await page.content();
     const loadTimeMs = Date.now() - start;
+    await context.close();
 
     const $ = cheerio.load(html);
     const issues: PageAuditResult['issues'] = [];
