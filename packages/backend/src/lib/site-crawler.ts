@@ -291,12 +291,11 @@ export class SiteCrawler {
       }
     });
 
-    // Only flag missing schema on key pages (homepage, blog posts), not every page
+    // Only flag missing schema on the homepage — not on every page
     if (schemaTypes.length === 0) {
       const pathname = new URL(url).pathname;
-      const isKeyPage = pathname === '/' || pathname === '' || pathname.includes('/blog');
-      if (isKeyPage) {
-        issues.push({ type: 'info', code: 'NO_SCHEMA', message: 'No structured data (JSON-LD) found — recommended for homepage and blog posts' });
+      if (pathname === '/' || pathname === '') {
+        issues.push({ type: 'info', code: 'NO_SCHEMA', message: 'No structured data (JSON-LD) found — add WebSite + SoftwareApplication schema' });
       }
     }
 
