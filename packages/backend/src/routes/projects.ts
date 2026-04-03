@@ -846,13 +846,13 @@ export async function projectRoutes(app: FastifyInstance) {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return reply.status(404).send({ error: 'Project not found' });
 
-    // Validate that keywords exist
+    // Check if keywords exist (not required for live apps with store listing)
     const [kwCount] = await db
       .select({ count: sql<number>`COUNT(*)` })
       .from(discoveredKeywords)
       .where(eq(discoveredKeywords.projectId, id));
 
-    if (Number(kwCount?.count ?? 0) === 0) {
+    if (Number(kwCount?.count ?? 0) === 0 && project.mode === 'pre_launch') {
       return reply.status(400).send({
         error: 'No discovered keywords. Run keyword discovery first.',
       });

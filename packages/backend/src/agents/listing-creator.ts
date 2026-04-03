@@ -275,11 +275,8 @@ Always respond with valid JSON. No markdown fences.`;
       )
       .limit(40);
 
-    if (discoveredKws.length === 0) {
-      throw new Error(
-        'No discovered keywords found. Run keyword discovery first.',
-      );
-    }
+    // Keywords are helpful but not required — live apps can generate
+    // from store listing + app context + competitor data alone
 
     // Get competitors
     const competitorRows = await db

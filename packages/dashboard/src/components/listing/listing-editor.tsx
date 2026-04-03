@@ -254,14 +254,12 @@ export function ListingEditor({ projectId, projectName, keywords, storeListing }
           <div className="relative group">
             <button
               onClick={() => generateListing.mutate()}
-              disabled={generateListing.isPending || keywords.length === 0}
+              disabled={generateListing.isPending}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all',
                 generateListing.isPending
                   ? 'bg-accent/20 text-accent cursor-wait'
-                  : keywords.length === 0
-                    ? 'bg-surface-2 text-text-muted cursor-not-allowed'
-                    : 'bg-accent text-white hover:bg-accent/90 shadow-sm',
+                  : 'bg-accent text-white hover:bg-accent/90 shadow-sm',
               )}
             >
               {generateListing.isPending ? (
@@ -276,11 +274,6 @@ export function ListingEditor({ projectId, projectName, keywords, storeListing }
                 </>
               )}
             </button>
-            {keywords.length === 0 && (
-              <div className="absolute right-0 top-full mt-1.5 w-48 bg-surface-1 border border-border rounded-lg p-2 text-[10px] text-text-muted shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
-                Run keyword discovery first — the AI agent needs keywords to optimize for.
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Zap, ArrowRight, Brain } from 'lucide-react'
+import { Inbox, ArrowRight, Brain } from 'lucide-react'
 import { strategy, projects as projectsApi, type StrategyAction, type Project } from '#/lib/api'
 import { ActionCard } from '#/components/strategy/action-card'
 import { Badge } from '#/components/ui/badge'
@@ -61,9 +61,12 @@ function StrategyPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-xl font-semibold text-text-primary">Strategy Queue</h1>
+        <div className="flex items-center gap-2">
+          <Inbox size={20} className="text-text-tertiary" />
+          <h1 className="text-xl font-semibold text-text-primary">Inbox</h1>
+        </div>
         <p className="text-sm text-text-tertiary mt-1">
-          AI-generated optimization actions across all your projects
+          AI recommendations across all your projects
         </p>
       </div>
 
@@ -103,8 +106,8 @@ function StrategyPage() {
       ) : actions.length === 0 ? (
         <EmptyState
           icon={<Brain size={32} />}
-          title="No strategy actions yet"
-          description="Go to a project's Strategy tab to run AI agents. They'll analyze your app and generate optimization recommendations here."
+          title="Inbox is empty"
+          description="Run a health check or keyword discovery from a project dashboard — AI recommendations will appear here."
           action={
             allProjects.length > 0 ? (
               <Link
@@ -124,7 +127,7 @@ function StrategyPage() {
           {pending.length > 0 && (
             <div className="mb-8">
               <h2 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-4">
-                Needs Your Decision
+                New Recommendations
                 <span className="ml-2 text-accent">{pending.length}</span>
               </h2>
 
