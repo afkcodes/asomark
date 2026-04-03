@@ -623,6 +623,33 @@ export const contentWriter = {
     ),
 }
 
+export interface CrawlerAccessResult {
+  crawler: string
+  agent: string
+  org: string
+  description: string
+  allowed: boolean
+  rule: string | null
+}
+
+export interface CrawlerAuditResult {
+  url: string
+  robotsTxtFound: boolean
+  crawlers: CrawlerAccessResult[]
+  score: number
+  summary: { allowed: number; blocked: number; total: number }
+}
+
+export const crawlerAudit = {
+  check: (projectId: string, url: string) =>
+    api.post<CrawlerAuditResult>(`/api/projects/${projectId}/crawler-audit`, { url }),
+}
+
+export const llmTxt = {
+  generate: (projectId: string) =>
+    api.post<{ content: string }>(`/api/projects/${projectId}/llm-txt`, {}),
+}
+
 // ─── AI Visibility ───
 
 export interface AiVisibilityCheck {

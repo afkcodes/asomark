@@ -11,6 +11,7 @@ import {
   BarChart3,
   ScanSearch,
   Brain,
+  Wrench,
 } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import { EmptyState, Spinner } from '#/components/ui/spinner'
@@ -22,6 +23,7 @@ import { SeoTab } from '#/components/seo/seo-tab'
 import { GscTab } from '#/components/seo/gsc-tab'
 import { SiteAuditTab } from '#/components/seo/site-audit-tab'
 import { AiVisibilityTab } from '#/components/seo/ai-visibility-tab'
+import { SeoToolsTab } from '#/components/seo/seo-tools-tab'
 import { OverlapMatrix } from '#/components/keywords/overlap-matrix'
 import { projects as projectsApi } from '#/lib/api'
 import { useProjectContext } from '#/lib/project-context'
@@ -31,7 +33,7 @@ export const Route = createFileRoute('/projects/$projectId/keywords')({
   component: KeywordsSection,
 })
 
-type SubView = 'aso' | 'seo' | 'gsc' | 'audit' | 'ai' | 'overlap'
+type SubView = 'aso' | 'seo' | 'gsc' | 'audit' | 'ai' | 'tools' | 'overlap'
 
 function KeywordsSection() {
   const { project, keywords, projectId, keywordsFetching } = useProjectContext()
@@ -86,6 +88,7 @@ function KeywordsSection() {
     { id: 'gsc', label: 'Search Console', icon: BarChart3 },
     { id: 'audit', label: 'Site Audit', icon: ScanSearch },
     { id: 'ai', label: 'AI Visibility', icon: Brain },
+    { id: 'tools', label: 'SEO Tools', icon: Wrench },
     ...(!isPreLaunch ? [{ id: 'overlap' as SubView, label: 'Overlap', icon: Layers }] : []),
   ]
 
@@ -236,6 +239,13 @@ function KeywordsSection() {
       {view === 'ai' && (
         <div className="animate-fade-in">
           <AiVisibilityTab projectId={projectId} />
+        </div>
+      )}
+
+      {/* SEO Tools view */}
+      {view === 'tools' && (
+        <div className="animate-fade-in">
+          <SeoToolsTab projectId={projectId} />
         </div>
       )}
 

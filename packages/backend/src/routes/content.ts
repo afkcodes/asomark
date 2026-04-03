@@ -14,6 +14,7 @@ import { projects } from '../db/schema/projects.js';
 import { seoContentPlans } from '../db/schema/seo.js';
 import { llm } from '../lib/llm.js';
 import { WebScraper } from '../scrapers/web.js';
+import { auditCrawlerAccess, generateLlmTxt } from '../lib/crawler-audit.js';
 
 const webScraper = new WebScraper();
 
@@ -200,5 +201,53 @@ Write the article in markdown. At the end, include:
         output: result.outputTokens,
       },
     };
+  });
+
+  // ─── AI Crawler Access Audit ───
+
+  /** Check if AI crawlers can access the website */
+  app.post('/api/projects/:id/crawler-audit', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { url?: string };
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    if (!project) return reply.status(404).send({ error: 'Project not found' });
+
+    const url = body.url || project.websiteUrl;
+    if (!url) return reply.status(400).send({ error: 'url is required' });
+
+    const result = await auditCrawlerAccess(url);
+    return result;
+  });
+
+  // ─── LLM.txt Generator ───
+
+  /** Generate an llm.txt file for the website */
+  app.post('/api/projects/:id/llm-txt', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    if (!project) return reply.status(404).send({ error: 'Project not found' });
+
+    const brandProfileData = project.brandProfile as {
+      tone?: string;
+      values?: string[];
+      tagline?: string;
+      contentThemes?: string[];
+    } | null;
+
+    const content = generateLlmTxt({
+      siteName: project.name,
+      siteUrl: project.websiteUrl ?? '',
+      description: project.appDescription ?? `${project.name} - ${project.category ?? 'App'}`,
+      appName: project.name,
+      appDescription: project.appDescription ?? undefined,
+      keyFeatures: (project.keyFeatures as string[]) ?? undefined,
+      targetAudience: project.targetAudience ?? undefined,
+      brandProfile: brandProfileData,
+      contentThemes: brandProfileData?.contentThemes,
+    });
+
+    return { content };
   });
 }
