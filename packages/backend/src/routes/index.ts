@@ -16,6 +16,7 @@ import { streamRoutes } from './stream.js';
 import { seoRoutes } from './seo.js';
 import { settingsRoutes } from './settings.js';
 import { gscRoutes } from './gsc.js';
+import { siteAuditRoutes } from './site-audit.js';
 
 export async function routes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -40,4 +41,5 @@ export async function routes(app: FastifyInstance) {
   await app.register(seoRoutes);
   await app.register(settingsRoutes);
   await app.register(gscRoutes);
+  await app.register(siteAuditRoutes);
 }

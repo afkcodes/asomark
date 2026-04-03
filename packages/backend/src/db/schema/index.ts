@@ -15,3 +15,4 @@ export * from './listing-drafts.js';
 export * from './seo.js';
 export * from './settings.js';
 export * from './gsc.js';
+export * from './site-audit.js';

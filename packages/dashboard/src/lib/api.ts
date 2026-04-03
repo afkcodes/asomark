@@ -551,6 +551,50 @@ export const seo = {
     api.get<SeoStats>(`/api/projects/${projectId}/seo/stats`),
 }
 
+// ─── Site Audit ───
+
+export interface SiteAudit {
+  id: string
+  projectId: string
+  siteUrl: string
+  status: 'running' | 'completed' | 'failed'
+  pagesCrawled: number
+  issuesFound: number
+  score: number | null
+  summary: { critical: number; warning: number; info: number; passed: number } | null
+  startedAt: string
+  completedAt: string | null
+}
+
+export interface SiteAuditPage {
+  id: string
+  url: string
+  statusCode: number | null
+  loadTimeMs: number | null
+  title: string | null
+  titleLength: number | null
+  metaDescription: string | null
+  metaDescriptionLength: number | null
+  h1Count: number | null
+  imageCount: number | null
+  imagesWithoutAlt: number | null
+  internalLinks: number | null
+  externalLinks: number | null
+  wordCount: number | null
+  schemaTypes: string[] | null
+  issues: Array<{ type: 'critical' | 'warning' | 'info'; code: string; message: string }> | null
+  score: number | null
+}
+
+export const siteAudit = {
+  run: (projectId: string, url: string) =>
+    api.post<{ id: string; status: string }>(`/api/projects/${projectId}/site-audit`, { url }),
+  latest: (projectId: string) =>
+    api.get<{ audit: SiteAudit | null; pages: SiteAuditPage[] }>(`/api/projects/${projectId}/site-audit/latest`),
+  history: (projectId: string) =>
+    api.get<{ data: SiteAudit[] }>(`/api/projects/${projectId}/site-audit/history`),
+}
+
 // ─── Google Search Console ───
 
 export interface GscConnection {

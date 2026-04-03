@@ -9,6 +9,7 @@ import {
   Layers,
   Trash2,
   BarChart3,
+  ScanSearch,
 } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import { EmptyState, Spinner } from '#/components/ui/spinner'
@@ -18,6 +19,7 @@ import { useToast } from '#/components/ui/toast'
 import { KeywordTable } from '#/components/keywords/keyword-table'
 import { SeoTab } from '#/components/seo/seo-tab'
 import { GscTab } from '#/components/seo/gsc-tab'
+import { SiteAuditTab } from '#/components/seo/site-audit-tab'
 import { OverlapMatrix } from '#/components/keywords/overlap-matrix'
 import { projects as projectsApi } from '#/lib/api'
 import { useProjectContext } from '#/lib/project-context'
@@ -27,7 +29,7 @@ export const Route = createFileRoute('/projects/$projectId/keywords')({
   component: KeywordsSection,
 })
 
-type SubView = 'aso' | 'seo' | 'gsc' | 'overlap'
+type SubView = 'aso' | 'seo' | 'gsc' | 'audit' | 'overlap'
 
 function KeywordsSection() {
   const { project, keywords, projectId, keywordsFetching } = useProjectContext()
@@ -80,6 +82,7 @@ function KeywordsSection() {
     { id: 'aso', label: 'ASO Keywords', icon: Hash },
     { id: 'seo', label: 'Web SEO', icon: Globe },
     { id: 'gsc', label: 'Search Console', icon: BarChart3 },
+    { id: 'audit', label: 'Site Audit', icon: ScanSearch },
     ...(!isPreLaunch ? [{ id: 'overlap' as SubView, label: 'Overlap', icon: Layers }] : []),
   ]
 
@@ -223,6 +226,13 @@ function KeywordsSection() {
       {view === 'gsc' && (
         <div className="animate-fade-in">
           <GscTab projectId={projectId} />
+        </div>
+      )}
+
+      {/* Site Audit view */}
+      {view === 'audit' && (
+        <div className="animate-fade-in">
+          <SiteAuditTab projectId={projectId} />
         </div>
       )}
 
