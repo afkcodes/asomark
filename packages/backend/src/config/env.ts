@@ -25,6 +25,10 @@ const envSchema = z.object({
   // File Storage
   STORAGE_PATH: z.string().default('./storage'),
 
+  // Google OAuth2 (for Search Console integration)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
   // Google Play Developer API (optional)
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
   GOOGLE_PLAY_DEVELOPER_ID: z.string().optional(),

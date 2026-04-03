@@ -4,6 +4,7 @@ import { scrapingWorker } from './scraping.js';
 import { experimentsWorker, scheduleExperimentJobs } from './experiments.js';
 import { setupWorker } from './setup.js';
 import { retentionWorker, scheduleRetentionJobs } from './retention.js';
+import { gscWorker, scheduleGscJobs } from './gsc.js';
 
 export { trackingQueue } from './tracking.js';
 export { analysisQueue } from './analysis.js';
@@ -11,6 +12,7 @@ export { scrapingQueue } from './scraping.js';
 export { experimentsQueue } from './experiments.js';
 export { setupQueue } from './setup.js';
 export { retentionQueue } from './retention.js';
+export { gscQueue } from './gsc.js';
 
 /**
  * Start all workers and schedule recurring jobs.
@@ -25,6 +27,7 @@ export async function startWorkers() {
     { name: 'experiments', worker: experimentsWorker },
     { name: 'setup', worker: setupWorker },
     { name: 'retention', worker: retentionWorker },
+    { name: 'gsc', worker: gscWorker },
   ];
 
   for (const { name, worker } of workers) {
@@ -41,6 +44,7 @@ export async function startWorkers() {
   await scheduleAnalysisJobs();
   await scheduleExperimentJobs();
   await scheduleRetentionJobs();
+  await scheduleGscJobs();
 
   console.log('[workers] All workers started and jobs scheduled');
 }
@@ -56,6 +60,7 @@ export async function stopWorkers() {
     experimentsWorker.close(),
     setupWorker.close(),
     retentionWorker.close(),
+    gscWorker.close(),
   ]);
   console.log('[workers] All workers stopped');
 }

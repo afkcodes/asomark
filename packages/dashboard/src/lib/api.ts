@@ -551,6 +551,67 @@ export const seo = {
     api.get<SeoStats>(`/api/projects/${projectId}/seo/stats`),
 }
 
+// ─── Google Search Console ───
+
+export interface GscConnection {
+  connected: boolean
+  siteUrl: string | null
+  connectedAt: string | null
+}
+
+export interface GscQueryRow {
+  query: string | null
+  clicks: number
+  impressions: number
+  avgPosition: number
+  avgCtr: number
+}
+
+export interface GscPageRow {
+  page: string | null
+  clicks: number
+  impressions: number
+  avgPosition: number
+}
+
+export interface GscOverlapRow {
+  query: string | null
+  clicks: number
+  impressions: number
+  avgPosition: number
+  inSeoKeywords: boolean
+}
+
+export const gsc = {
+  getAuthUrl: (projectId: string) =>
+    api.get<{ url: string }>(`/api/gsc/oauth/url?projectId=${projectId}`),
+  connection: (projectId: string) =>
+    api.get<GscConnection>(`/api/projects/${projectId}/gsc/connection`),
+  sites: (projectId: string) =>
+    api.get<{ data: string[] }>(`/api/projects/${projectId}/gsc/sites`),
+  updateSite: (projectId: string, siteUrl: string) =>
+    api.patch(`/api/projects/${projectId}/gsc/connection`, { siteUrl }),
+  disconnect: (projectId: string) =>
+    api.del(`/api/projects/${projectId}/gsc/connection`),
+  sync: (projectId: string) =>
+    api.post<{ synced: number; dateRange: { from: string; to: string } }>(`/api/projects/${projectId}/gsc/sync`, {}),
+  topQueries: (projectId: string, params?: { from?: string; to?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.from) qs.set('from', params.from)
+    if (params?.to) qs.set('to', params.to)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    return api.get<{ data: GscQueryRow[]; meta: { total: number; dateRange: { from: string; to: string } } }>(
+      `/api/projects/${projectId}/gsc/top-queries?${qs}`,
+    )
+  },
+  topPages: (projectId: string) =>
+    api.get<{ data: GscPageRow[] }>(`/api/projects/${projectId}/gsc/top-pages`),
+  overlap: (projectId: string) =>
+    api.get<{ data: GscOverlapRow[]; summary: { totalGscQueries: number; matchingSeoKeywords: number; newOpportunities: number } }>(
+      `/api/projects/${projectId}/gsc/overlap`,
+    ),
+}
+
 export const agents = {
   run: (agent: string, appId: string) => api.post(`/api/agents/${agent}/run`, { appId }),
   fullAnalysis: (appId: string) => api.post(`/api/agents/full-analysis`, { appId }),

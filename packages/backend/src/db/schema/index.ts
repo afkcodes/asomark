@@ -14,3 +14,4 @@ export * from './keyword-intelligence.js';
 export * from './listing-drafts.js';
 export * from './seo.js';
 export * from './settings.js';
+export * from './gsc.js';

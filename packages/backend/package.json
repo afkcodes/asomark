@@ -27,6 +27,7 @@
     "fastify": "latest",
     "google-play-scraper": "^10.1.2",
     "google-trends-api": "^4.9.2",
+    "googleapis": "^171.4.0",
     "ioredis": "latest",
     "nanoid": "latest",
     "natural": "latest",
