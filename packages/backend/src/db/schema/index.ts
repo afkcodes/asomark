@@ -16,3 +16,4 @@ export * from './seo.js';
 export * from './settings.js';
 export * from './gsc.js';
 export * from './site-audit.js';
+export * from './ai-visibility.js';

@@ -595,6 +595,55 @@ export const siteAudit = {
     api.get<{ data: SiteAudit[] }>(`/api/projects/${projectId}/site-audit/history`),
 }
 
+// ─── AI Visibility ───
+
+export interface AiVisibilityCheck {
+  id: string
+  prompt: string
+  platform: string
+  response: string
+  mentioned: boolean
+  sentiment: 'positive' | 'neutral' | 'negative'
+  position: number | null
+  competitors_mentioned: string[] | null
+  checkedAt: string
+}
+
+export interface AiVisibilityPrompt {
+  id: string
+  prompt: string
+  category: string
+  isActive: boolean
+}
+
+export interface AiVisibilityStats {
+  hasData: boolean
+  totalChecks?: number
+  mentionRate?: number
+  sentimentBreakdown?: { positive: number; neutral: number; negative: number }
+  avgPosition?: number
+  topCompetitors?: Array<{ name: string; count: number }>
+}
+
+export const aiVisibility = {
+  prompts: (projectId: string) =>
+    api.get<{ data: AiVisibilityPrompt[] }>(`/api/projects/${projectId}/ai-visibility/prompts`),
+  generatePrompts: (projectId: string) =>
+    api.post<{ generated: number; saved: number }>(`/api/projects/${projectId}/ai-visibility/generate-prompts`, {}),
+  addPrompt: (projectId: string, prompt: string, category?: string) =>
+    api.post<AiVisibilityPrompt>(`/api/projects/${projectId}/ai-visibility/prompts`, { prompt, category }),
+  deletePrompt: (projectId: string, promptId: string) =>
+    api.del(`/api/projects/${projectId}/ai-visibility/prompts/${promptId}`),
+  check: (projectId: string) =>
+    api.post<{ checked: number; mentioned: number; mentionRate: number; results: Array<{ prompt: string; mentioned: boolean; sentiment: string; position: number | null; competitorsMentioned: string[] }> }>(
+      `/api/projects/${projectId}/ai-visibility/check`, {},
+    ),
+  history: (projectId: string) =>
+    api.get<{ data: AiVisibilityCheck[] }>(`/api/projects/${projectId}/ai-visibility/history`),
+  stats: (projectId: string) =>
+    api.get<AiVisibilityStats>(`/api/projects/${projectId}/ai-visibility/stats`),
+}
+
 // ─── Google Search Console ───
 
 export interface GscConnection {
